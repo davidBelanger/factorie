@@ -5,6 +5,11 @@ import akka.actor.{Actor, Props, ActorSystem}
 import concurrent.duration.Duration
 import concurrent.{Future, Await}
 import akka.actor.Status.Success
+import java.util.concurrent.Executors
+import scala.concurrent._
+
+
+
 
 /**
  * User: apassos
@@ -49,6 +54,15 @@ object ProducerConsumerProcessing{
 
   object IteratorMutex
   def parForeach[In](xs: Iterator[In], numParallelJobs: Int = Runtime.getRuntime.availableProcessors(),perJobTimeout: Long = 10 ,overallTimeout: Long = 24)(body: In => Unit): Unit  = {
+
+    implicit val ec = new ExecutionContext {
+      val threadPool = Executors.newFixedThreadPool(numParallelJobs);
+      def execute(runnable: Runnable) {
+        threadPool.submit(runnable)
+      }
+      def reportFailure(t: Throwable) {}
+    }
+
     val system = ActorSystem("producer-consumer")
 
     val actors = (0 until numParallelJobs).map(i => system.actorOf(Props(new ParForeachActor(body)), "actor-"+i))
