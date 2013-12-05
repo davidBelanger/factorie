@@ -6,7 +6,7 @@ import cc.factorie.app.chain._
 import cc.factorie.optimize.{SynchronizedOptimizerOnlineTrainer, Trainer, SampleRankTrainer}
 import cc.factorie.infer.{GibbsSampler, InferByBPChain}
 
-object Tutorial060Learning {
+object Tutorial60Learning {
   def main(args:Array[String]): Unit = {
     implicit val random = new scala.util.Random(0)
     /*& Here we set up a simple linear chain CRF, such as the one used for part-of-speech tagging,
@@ -170,8 +170,8 @@ object Tutorial060Learning {
 
     // Now we can run inference and see that we have learned
     val summary2 = InferByBPChain(document.tokens.map(_.attr[Label]).toIndexedSeq, model)
-    assertStringEquals(summary2.logZ, "48.63607808729122")
-    assertStringEquals(summary2.marginal(document.tokens.head.attr[Label]).proportions, "Proportions(0.9999308678897892,6.913211020966629E-5)")
+    assertStringEquals(summary2.logZ, "48.63607808733321")
+    assertStringEquals(summary2.marginal(document.tokens.head.attr[Label]).proportions, "Proportions(0.9999308678897892,6.913211020986326E-5)")
 
     /*&
      * Factorie also has support for more efficient learning algorithms than traditional

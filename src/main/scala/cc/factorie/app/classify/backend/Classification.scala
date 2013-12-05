@@ -26,6 +26,14 @@ trait Predictor[Prediction, Input] {
 }
 
 trait OptimizablePredictor[Prediction, Input] extends Predictor[Prediction, Input] {
+  /**
+   * Put gradient of objective with respect to parameters into the accumulator.
+   * The contract states we cannot mutate the "input" argument inside this method.
+   * @param accumulator Accumulator to hold gradient
+   * @param input Input to predict on
+   * @param objectiveByPredictionGradient Gradient of objective with respect to the prediction
+   * @param weight Weight mutliplier for gradient
+   */
   def accumulateObjectiveGradient(accumulator: WeightsMapAccumulator, input: Input, objectiveByPredictionGradient: Prediction, weight: Double): Unit
 }
 
@@ -146,7 +154,7 @@ class ClassifierTemplate2[T <: DiscreteVar](l2f: T => TensorVar, classifier: Mul
 class LinearBinaryClassifier(val featureSize: Int) extends BinaryClassifier[Tensor1] with Parameters with OptimizablePredictor[Double, Tensor1] {
   val weights = Weights(new DenseTensor1(featureSize))
   def predict(features: Tensor1) = weights.value.dot(features)
-  def accumulateObjectiveGradient(accumulator: WeightsMapAccumulator, features: Tensor1, gradient: Double, weight: Double) = accumulator.accumulate(weights, features, gradient * weight)
+  def accumulateObjectiveGradient(accumulator: WeightsMapAccumulator, features: Tensor1, gradient: Double, weight: Double) = accumulator.accumulate(weights, features.copy, gradient * weight)
 }
 
 class LinearMulticlassClassifier(val labelSize: Int, val featureSize: Int) extends MulticlassClassifier[Tensor1] with Parameters with OptimizablePredictor[Tensor1,Tensor1] {
@@ -189,13 +197,13 @@ class LinearMulticlassTrainer(val optimizer: GradientOptimizer,
   def newModel(featureSize: Int, labelSize: Int) = new LinearMulticlassClassifier(labelSize, featureSize)
 }
 
-class SVMMulticlassTrainer(nThreads: Int = 1)(implicit val random: scala.util.Random) extends MulticlassClassifierTrainer[LinearMulticlassClassifier] {
+class SVMMulticlassTrainer(nThreads: Int = 1, l2: Double = 0.1)(implicit val random: scala.util.Random) extends MulticlassClassifierTrainer[LinearMulticlassClassifier] {
   def newModel(featureSize: Int, labelSize: Int) = new LinearMulticlassClassifier(labelSize, featureSize)
   def baseTrain(classifier: LinearMulticlassClassifier, labels: Seq[Int], features: Seq[Tensor1], weights: Seq[Double], evaluate: LinearMulticlassClassifier => Unit) {
     val ll = labels.toArray
     val ff = features.toArray
     val numLabels = classifier.weights.value.dim2
-    val weightTensor = Threading.parMap(0 until numLabels, nThreads) { label => (new LinearL2SVM).train(ff, ll, label) }
+    val weightTensor = Threading.parMap(0 until numLabels, nThreads) { label => new LinearL2SVM(cost = 1 / l2).train(ff, ll, label) }
     val weightsValue = classifier.weights.value
     for (f <- 0 until weightsValue.dim1; (l,t) <- (0 until numLabels).zip(weightTensor)) {
       weightsValue(f,l) = t(f)
