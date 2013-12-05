@@ -55,8 +55,9 @@ object ProducerConsumerProcessing{
   object IteratorMutex
   def parForeach[In](xs: Iterator[In], numParallelJobs: Int = Runtime.getRuntime.availableProcessors(),perJobTimeout: Long = 10 ,overallTimeout: Long = 24)(body: In => Unit): Unit  = {
 
+    val threadPool = Executors.newFixedThreadPool(numParallelJobs);
+
     implicit val ec = new ExecutionContext {
-      val threadPool = Executors.newFixedThreadPool(numParallelJobs);
       def execute(runnable: Runnable) {
         threadPool.submit(runnable)
       }
@@ -71,6 +72,7 @@ object ProducerConsumerProcessing{
     val futures = actors.map(a => a.ask(Message(xs))(Duration(perJobTimeout,"minutes")))
     Await.result(Future.sequence(futures.toSeq), Duration(overallTimeout,"hours"))
     system.shutdown()
+    threadPool.shutdown()
 
   }
 
