@@ -3,7 +3,6 @@ import cc.factorie._
 import cc.factorie.app.nlp._
 import cc.factorie.app.nlp.pos._
 import cc.factorie.app.nlp.morph.BasicMorphologicalAnalyzer
-import org.jblas.Singular
 import cc.factorie.variable.{EnumDomain, CategoricalVariable}
 
 object MentionNumberDomain extends EnumDomain {
