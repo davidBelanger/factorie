@@ -28,19 +28,19 @@ class ForwardPosTagger extends DocumentAnnotator {
     //val label = token.attr[LabeledPennPosDomain].value.target
   }
 
-  class PosFeatureTemplateVariable extends FeatureTemplateVariable[PosTemplateDomain]
+  class PosFeatureTemplateVariable extends FeatureTemplateVariable[PennPosTag]
 
-  object WordFeatureTemplate extends FeatureTemplate[PosTemplateDomain] {
+  object WordFeatureTemplate extends FeatureTemplate[PennPosTag] {
     def name = "word"
-    def computeFeatures(v: PosTemplateDomain, ftv: FeatureTemplateVariable[PosTemplateDomain]): Seq[String] = {
-      Seq(v.word)
+    def computeFeatures(v: PennPosTag, ftv: FeatureTemplateVariable[PennPosTag]): Seq[String] = {
+      Seq(v.token.string)
     }
   }
 
-  object RestFeatureTemplate extends FeatureTemplate[PosTemplateDomain] {
+  object RestFeatureTemplate extends FeatureTemplate[PennPosTag] {
     def name = "rest"
-    def computeFeatures(v: PosTemplateDomain, ftv: FeatureTemplateVariable[PosTemplateDomain]): Seq[String] = {
-      Seq(v.word)
+    def computeFeatures(v: PennPosTag, ftv: FeatureTemplateVariable[PennPosTag]): Seq[String] = {
+      Seq(v.token.string)
 //      def lemmaStringAtOffset(offset: Int): String = "L@" + offset + "=" + lemmas.docFreqLc(lemmaIndex + offset) // this is lowercased
 //      def wordStringAtOffset(offset: Int): String = "W@" + offset + "=" + lemmas.docFreq(lemmaIndex + offset) // this is not lowercased, but still has digits replaced
 //      def affinityTagAtOffset(offset: Int): String = "A@" + offset + "=" + WordData.ambiguityClasses.getOrElse(lemmas.lc(lemmaIndex + offset), null)
@@ -166,7 +166,7 @@ class ForwardPosTagger extends DocumentAnnotator {
 
   val templates = Seq(WordFeatureTemplate, RestFeatureTemplate)
 
-  val model = new CategoricalTemplateModel[PosTemplateDomain](templates, PennPosDomain.size)
+  val model = new CategoricalTemplateModel[PennPosTag](templates, PennPosDomain.size)
 
   /** Local lemmatizer used for POS features. */
   protected def lemmatize(string: String): String = cc.factorie.app.strings.replaceDigits(string)
@@ -416,14 +416,15 @@ class ForwardPosTagger extends DocumentAnnotator {
   //  }
 
   var exampleSetsToPrediction = false
-  class SentenceClassifierExample(val tokens: Seq[Token], model: CategoricalTemplateModel[PosTemplateDomain], lossAndGradient: optimize.OptimizableObjectives.Multiclass) extends optimize.Example {
+  class SentenceClassifierExample(val tokens: Seq[Token], model: CategoricalTemplateModel[PennPosTag], lossAndGradient: optimize.OptimizableObjectives.Multiclass) extends optimize.Example {
     def accumulateValueAndGradient(value: DoubleAccumulator, gradient: WeightsMapAccumulator) {
       val lemmaStrings = lemmas(tokens)
       for (index <- 0 until tokens.length) {
         val token = tokens(index)
         val posLabel = token.attr[LabeledPennPosTag]
         val domain = new PosTemplateDomain(token, index, lemmaStrings)
-        val featureVector = model.getFeatureVectors(domain).featureVectorMap(WordFeatureTemplate) //features(token, index, lemmaStrings)
+        val featureVector = model.getFeatureVectors(posLabel).featureVectorMap(WordFeatureTemplate) //features(token, index, lemmaStrings)
+        val featureVector =
         new optimize.PredictorExample(model, featureVector, posLabel.target.intValue, lossAndGradient, 1.0).accumulateValueAndGradient(value, gradient)
         if (exampleSetsToPrediction) {
           posLabel.set(model.classification(domain.features).bestLabelIndex)(null)
@@ -543,10 +544,13 @@ class ForwardPosTagger extends DocumentAnnotator {
     //    FeatureDomain.domain.freeze()
     //    println("After pruning using %d features.".format(FeatureDomain.domain.dimensionDomain.size))
     val domains = templates.map(t => new CategoricalFeatureTemplateDomain)
-    val instances = trainTokens.zipWithIndex.map(tok => new PosTemplateDomain(tok._1, tok._2, trainLemmas))
-    instances.foreach(i => {
-      templates.zip(domains).foreach(td => td._1.addFeatureVector(i, i.features, td._2))
-    })
+
+    //David: These lines don't make sense to me, but it also seems that you are not using their output
+//    val instances = trainTokens.zipWithIndex.map(tok => new PosTemplateDomain(tok._1, tok._2, trainLemmas))
+//    instances.foreach(i => {
+//      templates.zip(domains).foreach(td => td._1.addFeatureVector(i, i.features, td._2))
+////    })
+
     println("finished computing features")
 
     //println("POS1.train\n"+trainSentences(3).tokens.map(_.string).zip(features(trainSentences(3).tokens).map(t => new FeatureVariable(t).toString)).mkString("\n"))
