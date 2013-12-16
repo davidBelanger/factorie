@@ -68,7 +68,7 @@ class CrossProductTemplate[V](t1: FeatureTemplate[V], t2: FeatureTemplate[V]) ex
 }
 
 
-trait TemplateModel[V] extends LinearModel[Tensor1,FeatureTemplateVariable[V]] {
+trait TemplateModel[V] extends OptimizablePredictor[Tensor1,FeatureTemplateVariable[V]] {
   def templates: Seq[(FeatureTemplate[V], FeatureTemplateDomain)]
 
   //Use this if you have feature templates that use cached computation from previous templates. If you are using this, make
