@@ -40,125 +40,126 @@ class ForwardPosTagger extends DocumentAnnotator {
   object RestFeatureTemplate extends FeatureTemplate[PosTemplateDomain] {
     def name = "rest"
     def computeFeatures(v: PosTemplateDomain, ftv: FeatureTemplateVariable[PosTemplateDomain]): Seq[String] = {
-      def lemmaStringAtOffset(offset: Int): String = "L@" + offset + "=" + lemmas.docFreqLc(lemmaIndex + offset) // this is lowercased
-      def wordStringAtOffset(offset: Int): String = "W@" + offset + "=" + lemmas.docFreq(lemmaIndex + offset) // this is not lowercased, but still has digits replaced
-      def affinityTagAtOffset(offset: Int): String = "A@" + offset + "=" + WordData.ambiguityClasses.getOrElse(lemmas.lc(lemmaIndex + offset), null)
-      def posTagAtOffset(offset: Int): String = { val t = v.tok.next(offset); "P@" + offset + (if (t ne null) t.attr[PennPosTag].categoryValue else null) }
-      def takePrefix(s: String, n: Int): String = { if (n <= s.length) "PREFIX=" + s.substring(0, n) else null }
-      def takeSuffix(s: String, n: Int): String = { val l = s.length; if (n <= l) "SUFFIX=" + s.substring(l - n, l) else null }
-      val tensor = new SparseBinaryTensor1(FeatureDomain.dimensionSize); tensor.sizeHint(40)
-      def addFeature(s: String): Unit = if (s ne null) { val i = FeatureDomain.dimensionDomain.index(s); if (i >= 0) tensor += i }
-      // Original word, with digits replaced, no @
-      val Wm2 = if (v.idx > 1) lemmas(v.idx - 2) else ""
-      val Wm1 = if (v.idx > 0) lemmas(v.idx - 1) else ""
-      val W = lemmas(v.idx)
-      val Wp1 = if (v.idx < lemmas.length - 1) lemmas(v.idx + 1) else ""
-      val Wp2 = if (v.idx < v.idx - 2) lemmas(v.idx + 2) else ""
-      // Original words at offsets, with digits replaced, marked with @
-      val wm3 = wordStringAtOffset(-3)
-      val wm2 = wordStringAtOffset(-2)
-      val wm1 = wordStringAtOffset(-1)
-      val w0 = wordStringAtOffset(0)
-      val wp1 = wordStringAtOffset(1)
-      val wp2 = wordStringAtOffset(2)
-      val wp3 = wordStringAtOffset(3)
-      // Lemmas at offsets
-      val lm2 = lemmaStringAtOffset(-2)
-      val lm1 = lemmaStringAtOffset(-1)
-      val l0 = lemmaStringAtOffset(0)
-      val lp1 = lemmaStringAtOffset(1)
-      val lp2 = lemmaStringAtOffset(2)
-      // Affinity classes at next offsets
-      val a0 = affinityTagAtOffset(0)
-      val ap1 = affinityTagAtOffset(1)
-      val ap2 = affinityTagAtOffset(2)
-      val ap3 = affinityTagAtOffset(3)
-      // POS tags at prev offsets
-      val pm1 = posTagAtOffset(-1)
-      val pm2 = posTagAtOffset(-2)
-      val pm3 = posTagAtOffset(-3)
-      addFeature(wm3)
-      addFeature(wm2)
-      addFeature(wm1)
-      addFeature(w0)
-      addFeature(wp1)
-      addFeature(wp2)
-      addFeature(wp3)
-      // The paper also includes wp3 and wm3
-
-      // not in ClearNLP
-      //    addFeature(lp3)
-      //    addFeature(lp2)
-      //    addFeature(lp1)
-      //    addFeature(l0)
-      //    addFeature(lm1)
-      //    addFeature(lm2)
-      //    addFeature(lm3)
-
-      addFeature(pm3)
-      addFeature(pm2)
-      addFeature(pm1)
-      addFeature(a0)
-      addFeature(ap1)
-      addFeature(ap2)
-      addFeature(ap3)
-      addFeature(lm2 + lm1)
-      addFeature(lm1 + l0)
-      addFeature(l0 + lp1)
-      addFeature(lp1 + lp2)
-      addFeature(lm1 + lp1)
-      addFeature(pm2 + pm1)
-      addFeature(ap1 + ap2)
-      addFeature(pm1 + ap1)
-
-      //    addFeature(pm1+a0) // Not in http://www.aclweb.org/anthology-new/P/P12/P12-2071.pdf
-      //    addFeature(a0+ap1) // Not in http://www.aclweb.org/anthology-new/P/P12/P12-2071.pdf
-
-      addFeature(lm2 + lm1 + l0)
-      addFeature(lm1 + l0 + lp1)
-      addFeature(l0 + lp1 + lp2)
-      addFeature(lm2 + lm1 + lp1)
-      addFeature(lm1 + lp1 + lp2)
-      addFeature(pm2 + pm1 + a0)
-      addFeature(pm1 + a0 + ap1)
-      addFeature(pm2 + pm1 + ap1)
-      addFeature(pm1 + ap1 + ap2)
-
-      //    addFeature(a0+ap1+ap2) // Not in http://www.aclweb.org/anthology-new/P/P12/P12-2071.pdf
-
-      addFeature(takePrefix(W, 1))
-      addFeature(takePrefix(W, 2))
-      addFeature(takePrefix(W, 3))
-
-      // not in ClearNLP
-      //    addFeature("PREFIX2@1="+takePrefix(Wp1, 2))
-      //    addFeature("PREFIX3@1="+takePrefix(Wp1, 3))
-      //    addFeature("PREFIX2@2="+takePrefix(Wp2, 2))
-      //    addFeature("PREFIX3@2="+takePrefix(Wp2, 3))
-
-      addFeature(takeSuffix(W, 1))
-      addFeature(takeSuffix(W, 2))
-      addFeature(takeSuffix(W, 3))
-      addFeature(takeSuffix(W, 4))
-
-      // not in ClearNLP
-      //    addFeature("SUFFIX1@1="+takeRight(Wp1, 1))
-      //    addFeature("SUFFIX2@1="+takeRight(Wp1, 2))
-      //    addFeature("SUFFIX3@1="+takeRight(Wp1, 3))
-      //    addFeature("SUFFIX4@1="+takeRight(Wp1, 4))
-      //    addFeature("SUFFIX2@2="+takeRight(Wp2, 2))
-      //    addFeature("SUFFIX3@2="+takeRight(Wp2, 3))
-      //    addFeature("SUFFIX4@2="+takeRight(Wp2, 4))
-      addFeature("SHAPE@-2=" + cc.factorie.app.strings.stringShape(Wm2, 2))
-      addFeature("SHAPE@-1=" + cc.factorie.app.strings.stringShape(Wm1, 2))
-      addFeature("SHAPE@0=" + cc.factorie.app.strings.stringShape(W, 2))
-      addFeature("SHAPE@1=" + cc.factorie.app.strings.stringShape(Wp1, 2))
-      addFeature("SHAPE@2=" + cc.factorie.app.strings.stringShape(Wp2, 2))
-      // TODO(apassos): add the remaining jinho features not contained in shape
-      addFeature("HasPeriod=" + (w0.indexOf('.') >= 0))
-      addFeature("HasHyphen=" + (w0.indexOf('-') >= 0))
-      addFeature("HasDigit=" + (l0.indexOf('0', 4) >= 0)) // The 4 is to skip over "W@0="
-      //addFeature("MiddleHalfCap="+token.string.matches(".+1/2[A-Z].*")) // Paper says "contains 1/2+capital(s) not at the beginning".  Strange feature.  Why? -akm
+      Seq(v.word)
+//      def lemmaStringAtOffset(offset: Int): String = "L@" + offset + "=" + lemmas.docFreqLc(lemmaIndex + offset) // this is lowercased
+//      def wordStringAtOffset(offset: Int): String = "W@" + offset + "=" + lemmas.docFreq(lemmaIndex + offset) // this is not lowercased, but still has digits replaced
+//      def affinityTagAtOffset(offset: Int): String = "A@" + offset + "=" + WordData.ambiguityClasses.getOrElse(lemmas.lc(lemmaIndex + offset), null)
+//      def posTagAtOffset(offset: Int): String = { val t = v.tok.next(offset); "P@" + offset + (if (t ne null) t.attr[PennPosTag].categoryValue else null) }
+//      def takePrefix(s: String, n: Int): String = { if (n <= s.length) "PREFIX=" + s.substring(0, n) else null }
+//      def takeSuffix(s: String, n: Int): String = { val l = s.length; if (n <= l) "SUFFIX=" + s.substring(l - n, l) else null }
+//      val tensor = new SparseBinaryTensor1(FeatureDomain.dimensionSize); tensor.sizeHint(40)
+//      def addFeature(s: String): Unit = if (s ne null) { val i = FeatureDomain.dimensionDomain.index(s); if (i >= 0) tensor += i }
+//      // Original word, with digits replaced, no @
+//      val Wm2 = if (v.idx > 1) lemmas(v.idx - 2) else ""
+//      val Wm1 = if (v.idx > 0) lemmas(v.idx - 1) else ""
+//      val W = lemmas(v.idx)
+//      val Wp1 = if (v.idx < lemmas.length - 1) lemmas(v.idx + 1) else ""
+//      val Wp2 = if (v.idx < v.idx - 2) lemmas(v.idx + 2) else ""
+//      // Original words at offsets, with digits replaced, marked with @
+//      val wm3 = wordStringAtOffset(-3)
+//      val wm2 = wordStringAtOffset(-2)
+//      val wm1 = wordStringAtOffset(-1)
+//      val w0 = wordStringAtOffset(0)
+//      val wp1 = wordStringAtOffset(1)
+//      val wp2 = wordStringAtOffset(2)
+//      val wp3 = wordStringAtOffset(3)
+//      // Lemmas at offsets
+//      val lm2 = lemmaStringAtOffset(-2)
+//      val lm1 = lemmaStringAtOffset(-1)
+//      val l0 = lemmaStringAtOffset(0)
+//      val lp1 = lemmaStringAtOffset(1)
+//      val lp2 = lemmaStringAtOffset(2)
+//      // Affinity classes at next offsets
+//      val a0 = affinityTagAtOffset(0)
+//      val ap1 = affinityTagAtOffset(1)
+//      val ap2 = affinityTagAtOffset(2)
+//      val ap3 = affinityTagAtOffset(3)
+//      // POS tags at prev offsets
+//      val pm1 = posTagAtOffset(-1)
+//      val pm2 = posTagAtOffset(-2)
+//      val pm3 = posTagAtOffset(-3)
+//      addFeature(wm3)
+//      addFeature(wm2)
+//      addFeature(wm1)
+//      addFeature(w0)
+//      addFeature(wp1)
+//      addFeature(wp2)
+//      addFeature(wp3)
+//      // The paper also includes wp3 and wm3
+//
+//      // not in ClearNLP
+//      //    addFeature(lp3)
+//      //    addFeature(lp2)
+//      //    addFeature(lp1)
+//      //    addFeature(l0)
+//      //    addFeature(lm1)
+//      //    addFeature(lm2)
+//      //    addFeature(lm3)
+//
+//      addFeature(pm3)
+//      addFeature(pm2)
+//      addFeature(pm1)
+//      addFeature(a0)
+//      addFeature(ap1)
+//      addFeature(ap2)
+//      addFeature(ap3)
+//      addFeature(lm2 + lm1)
+//      addFeature(lm1 + l0)
+//      addFeature(l0 + lp1)
+//      addFeature(lp1 + lp2)
+//      addFeature(lm1 + lp1)
+//      addFeature(pm2 + pm1)
+//      addFeature(ap1 + ap2)
+//      addFeature(pm1 + ap1)
+//
+//      //    addFeature(pm1+a0) // Not in http://www.aclweb.org/anthology-new/P/P12/P12-2071.pdf
+//      //    addFeature(a0+ap1) // Not in http://www.aclweb.org/anthology-new/P/P12/P12-2071.pdf
+//
+//      addFeature(lm2 + lm1 + l0)
+//      addFeature(lm1 + l0 + lp1)
+//      addFeature(l0 + lp1 + lp2)
+//      addFeature(lm2 + lm1 + lp1)
+//      addFeature(lm1 + lp1 + lp2)
+//      addFeature(pm2 + pm1 + a0)
+//      addFeature(pm1 + a0 + ap1)
+//      addFeature(pm2 + pm1 + ap1)
+//      addFeature(pm1 + ap1 + ap2)
+//
+//      //    addFeature(a0+ap1+ap2) // Not in http://www.aclweb.org/anthology-new/P/P12/P12-2071.pdf
+//
+//      addFeature(takePrefix(W, 1))
+//      addFeature(takePrefix(W, 2))
+//      addFeature(takePrefix(W, 3))
+//
+//      // not in ClearNLP
+//      //    addFeature("PREFIX2@1="+takePrefix(Wp1, 2))
+//      //    addFeature("PREFIX3@1="+takePrefix(Wp1, 3))
+//      //    addFeature("PREFIX2@2="+takePrefix(Wp2, 2))
+//      //    addFeature("PREFIX3@2="+takePrefix(Wp2, 3))
+//
+//      addFeature(takeSuffix(W, 1))
+//      addFeature(takeSuffix(W, 2))
+//      addFeature(takeSuffix(W, 3))
+//      addFeature(takeSuffix(W, 4))
+//
+//      // not in ClearNLP
+//      //    addFeature("SUFFIX1@1="+takeRight(Wp1, 1))
+//      //    addFeature("SUFFIX2@1="+takeRight(Wp1, 2))
+//      //    addFeature("SUFFIX3@1="+takeRight(Wp1, 3))
+//      //    addFeature("SUFFIX4@1="+takeRight(Wp1, 4))
+//      //    addFeature("SUFFIX2@2="+takeRight(Wp2, 2))
+//      //    addFeature("SUFFIX3@2="+takeRight(Wp2, 3))
+//      //    addFeature("SUFFIX4@2="+takeRight(Wp2, 4))
+//      addFeature("SHAPE@-2=" + cc.factorie.app.strings.stringShape(Wm2, 2))
+//      addFeature("SHAPE@-1=" + cc.factorie.app.strings.stringShape(Wm1, 2))
+//      addFeature("SHAPE@0=" + cc.factorie.app.strings.stringShape(W, 2))
+//      addFeature("SHAPE@1=" + cc.factorie.app.strings.stringShape(Wp1, 2))
+//      addFeature("SHAPE@2=" + cc.factorie.app.strings.stringShape(Wp2, 2))
+//      // TODO(apassos): add the remaining jinho features not contained in shape
+//      addFeature("HasPeriod=" + (w0.indexOf('.') >= 0))
+//      addFeature("HasHyphen=" + (w0.indexOf('-') >= 0))
+//      addFeature("HasDigit=" + (l0.indexOf('0', 4) >= 0)) // The 4 is to skip over "W@0="
+//      //addFeature("MiddleHalfCap="+token.string.matches(".+1/2[A-Z].*")) // Paper says "contains 1/2+capital(s) not at the beginning".  Strange feature.  Why? -akm
 
     }
   }
