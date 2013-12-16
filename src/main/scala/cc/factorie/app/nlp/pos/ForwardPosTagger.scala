@@ -20,26 +20,25 @@ class ForwardPosTagger extends DocumentAnnotator {
   //class FeatureVariable(t:Tensor1) extends BinaryFeatureVectorVariable[String] { def domain = FeatureDomain; set(t)(null) } // Only used for printing diagnostics
   //lazy val model = new LinearMulticlassClassifier(PennPosDomain.size, FeatureDomain.dimensionSize)
 
-  class PosTemplateDomain(token: Token, lemmaIndex: Int, lemmas: Lemmas) { //extends FeatureTemplateDomain{
-    val tok = token
+  class PosTemplateInstance(val token: Token, lemmaIndex: Int, lemmas: Lemmas) { //extends FeatureTemplateDomain{
     val word = lemmas(lemmaIndex)
     val idx = lemmaIndex
     val features = new PosFeatureTemplateVariable
-    //val label = token.attr[LabeledPennPosDomain].value.target
+    val label = token.attr[PennPosTag]
   }
 
-  class PosFeatureTemplateVariable extends FeatureTemplateVariable[PennPosTag]
+  class PosFeatureTemplateVariable extends FeatureTemplateVariable[PosTemplateInstance]
 
-  object WordFeatureTemplate extends FeatureTemplate[PennPosTag] {
+  object WordFeatureTemplate extends FeatureTemplate[PosTemplateInstance] {
     def name = "word"
-    def computeFeatures(v: PennPosTag, ftv: FeatureTemplateVariable[PennPosTag]): Seq[String] = {
+    def computeFeatures(v: PosTemplateInstance, ftv: FeatureTemplateVariable[PosTemplateInstance]): Seq[String] = {
       Seq(v.token.string)
     }
   }
 
-  object RestFeatureTemplate extends FeatureTemplate[PennPosTag] {
+  object RestFeatureTemplate extends FeatureTemplate[PosTemplateInstance] {
     def name = "rest"
-    def computeFeatures(v: PennPosTag, ftv: FeatureTemplateVariable[PennPosTag]): Seq[String] = {
+    def computeFeatures(v: PosTemplateInstance, ftv: FeatureTemplateVariable[PosTemplateInstance]): Seq[String] = {
       Seq(v.token.string)
 //      def lemmaStringAtOffset(offset: Int): String = "L@" + offset + "=" + lemmas.docFreqLc(lemmaIndex + offset) // this is lowercased
 //      def wordStringAtOffset(offset: Int): String = "W@" + offset + "=" + lemmas.docFreq(lemmaIndex + offset) // this is not lowercased, but still has digits replaced
@@ -166,7 +165,7 @@ class ForwardPosTagger extends DocumentAnnotator {
 
   val templates = Seq(WordFeatureTemplate, RestFeatureTemplate)
 
-  val model = new CategoricalTemplateModel[PennPosTag](templates, PennPosDomain.size)
+  val model = new CategoricalTemplateModel[PosTemplateInstance](templates, PennPosDomain.size)
 
   /** Local lemmatizer used for POS features. */
   protected def lemmatize(string: String): String = cc.factorie.app.strings.replaceDigits(string)
@@ -416,18 +415,22 @@ class ForwardPosTagger extends DocumentAnnotator {
   //  }
 
   var exampleSetsToPrediction = false
-  class SentenceClassifierExample(val tokens: Seq[Token], model: CategoricalTemplateModel[PennPosTag], lossAndGradient: optimize.OptimizableObjectives.Multiclass) extends optimize.Example {
+  class SentenceClassifierExample(val tokens: Seq[Token], model: CategoricalTemplateModel[PosTemplateInstance], lossAndGradient: optimize.OptimizableObjectives.Multiclass) extends optimize.Example {
     def accumulateValueAndGradient(value: DoubleAccumulator, gradient: WeightsMapAccumulator) {
       val lemmaStrings = lemmas(tokens)
       for (index <- 0 until tokens.length) {
         val token = tokens(index)
         val posLabel = token.attr[LabeledPennPosTag]
-        val domain = new PosTemplateDomain(token, index, lemmaStrings)
-        val featureVector = model.getFeatureVectors(posLabel).featureVectorMap(WordFeatureTemplate) //features(token, index, lemmaStrings)
-        val featureVector =
-        new optimize.PredictorExample(model, featureVector, posLabel.target.intValue, lossAndGradient, 1.0).accumulateValueAndGradient(value, gradient)
+        //val featureVector = model.getFeatureVectors(posLabel).featureVectorMap(WordFeatureTemplate) //features(token, index, lemmaStrings)
+        val lemmaIndex = -1   //todo: fix this
+
+        val ins = new PosTemplateInstance(token,lemmaIndex,lemmaStrings)
+        model.getFeatureVectors(ins)
+
+        val tmpExample = new optimize.PredictorExample(model,ins.features,ins.label.intValue,lossAndGradient,1.0)
+        tmpExample.accumulateValueAndGradient(value,gradient)
         if (exampleSetsToPrediction) {
-          posLabel.set(model.classification(domain.features).bestLabelIndex)(null)
+          posLabel.set(model.classification(ins.features).bestLabelIndex)(null)
         }
       }
     }
@@ -441,9 +444,10 @@ class ForwardPosTagger extends DocumentAnnotator {
       if (WordData.sureTokens.contains(token.string)) {
         token.attr[PennPosTag].set(WordData.sureTokens(token.string))(null)
       } else {
-        val domain = new PosTemplateDomain(token, index, lemmaStrings)
+        val ins = new PosTemplateInstance(token,index,lemmaStrings)
+        model.getFeatureVectors(ins)
         //val featureVector = model.getFeatureVectors(new PosTemplateDomain(token, index, lemmaStrings)).featureVectorMap(WordFeatureTemplate)//features(token, index, lemmaStrings)
-        token.attr[PennPosTag].set(model.classification(domain.features).bestLabelIndex)(null)
+        token.attr[PennPosTag].set(model.classification(ins.features).bestLabelIndex)(null)
       }
     }
   }
