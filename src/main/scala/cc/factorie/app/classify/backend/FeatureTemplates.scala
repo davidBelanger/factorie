@@ -9,20 +9,21 @@ class FeatureTemplateVectorVariable(val template: FeatureTemplate[_], val domain
 class HashedFeatureTemplateVectorVariable(val template: FeatureTemplate[_], val domain: DiscreteDomain)  extends cc.factorie.variable.HashFeatureVectorVariable
 
 //templates have no state. They do not have associated domains. You pass a template to a domain, and it returns a feature vector that points to this domain.
-trait FeatureTemplateDomain {
-  def domain: VectorDomain
-  def newFeatureVector(template: FeatureTemplate[_]): FeatureVectorVar[String]
+
+trait FeatureTemplateDomain  {
+  def size: Int
+  def newBlankFeatureVectorVar(template: FeatureTemplate[_]): FeatureVectorVar[String]
 }
 
-class CategoricalFeatureTemplateDomain extends FeatureTemplateDomain {
-  object domain extends CategoricalVectorDomain[String]
-  def newFeatureVector(template: FeatureTemplate[_]) = new FeatureTemplateVectorVariable(template,domain)
+class CategoricalFeatureTemplateDomain extends FeatureTemplateDomain with  CategoricalVectorDomain[String]{
+  def size = this.dimensionSize
+  def newBlankFeatureVectorVar(template: FeatureTemplate[_]) = new FeatureTemplateVectorVariable(template,this)
 }
 
-class HashedFeatureTemplateDomain(size: Int) extends FeatureTemplateDomain {
-  object domain extends DiscreteDomain(size)
-  def newFeatureVector(template: FeatureTemplate[_]) = new HashedFeatureTemplateVectorVariable(template,domain)
+class HashedFeatureTemplateDomain(size: Int) extends DiscreteDomain(size) with FeatureTemplateDomain {
+  def newBlankFeatureVectorVar(template: FeatureTemplate[_]) = new HashedFeatureTemplateVectorVariable(template,this)
 }
+
 
 //A feature template is basically something that has a name and method that takes a variable and returns strings representing binary features
 //The template has no state; it is a factory for features. It has methods getAndUpdateFeatures and addFeatureVector for adding features to variables.
@@ -39,7 +40,7 @@ trait FeatureTemplate[V]{
 
   //this computes the features and adds them to the input variable as a proper factorie FeatureVectorVar
   def addFeatureVector(v: V, ftv: FeatureTemplateVariable[V], d: FeatureTemplateDomain): Unit = {
-    val f = d.newFeatureVector(this)
+    val f = d.newBlankFeatureVectorVar(this)
     f ++= computeFeatures(v, ftv)
     ftv.featureVectorMap(this) = f
   }
@@ -68,7 +69,7 @@ class CrossProductTemplate[V](t1: FeatureTemplate[V], t2: FeatureTemplate[V]) ex
 }
 
 
-trait TemplateModel[V] extends LinearModel[Tensor1,FeatureTemplateVariable[V]] {
+trait TemplateModel[V] extends OptimizablePredictor[Tensor1,FeatureTemplateVariable[V]] {
   def templates: Seq[(FeatureTemplate[V], FeatureTemplateDomain)]
 
   //Use this if you have feature templates that use cached computation from previous templates. If you are using this, make
@@ -78,7 +79,7 @@ trait TemplateModel[V] extends LinearModel[Tensor1,FeatureTemplateVariable[V]] {
     val ftv = new FeatureTemplateVariable[V]
     templates.foreach(t => t._1.getAndUpdateFeatures(v, ftv))
     templates.foreach {case (t,d) =>
-      val f = d.newFeatureVector(t)
+      val f = d.newBlankFeatureVectorVar(t)
       f ++= t.getAndUpdateFeatures(v, ftv)
       ftv.map.remove(t)
       ftv.featureVectorMap(t) = f
@@ -90,7 +91,7 @@ trait TemplateModel[V] extends LinearModel[Tensor1,FeatureTemplateVariable[V]] {
   def getFeatureVectorsNonCached(v: V): FeatureTemplateVariable[V] = {
     val ftv = new FeatureTemplateVariable[V]
     templates.foreach {case (t,d) =>
-      val f = d.newFeatureVector(t)
+      val f = d.newBlankFeatureVectorVar(t)
       f ++= t.computeFeatures(v, ftv)
       ftv.featureVectorMap(t) = f
     }
@@ -101,12 +102,15 @@ trait TemplateModel[V] extends LinearModel[Tensor1,FeatureTemplateVariable[V]] {
 //This is just like a standard MulticlassModel, except that your weights are each associated with a feature template You pass in the domains as a constructor argument, so that you can choose
 //which ones to have hashed domains and which ones to have explicit domains
 class MulticlassTemplateModel[V](inTemplates: Seq[(FeatureTemplate[V], FeatureTemplateDomain)], outputSize: Int) extends TemplateModel[V] with Parameters with MulticlassClassifier[FeatureTemplateVariable[V]]{
-  val templatesWithWeights: Seq[(FeatureTemplate[V], FeatureTemplateDomain, Weights2)] = inTemplates.map(t => (t._1,t._2,Weights(new DenseTensor2(t._2.domain.dimensionSize, outputSize))))
+  val templatesWithWeights: Seq[(FeatureTemplate[V], FeatureTemplateDomain, Weights2)] = inTemplates.map(t => (t._1,t._2,Weights(new DenseTensor2(t._2.size, outputSize))))
   val templates = templatesWithWeights.map { case (a,b,c) => (a,b)}
-  def accumulateStats(accumulator: WeightsMapAccumulator, features: FeatureTemplateVariable[V], gradient: Tensor1) {
-    templatesWithWeights.foreach { case (t,d,w) => accumulator.accumulate(w, features.featureVectorMap(t).value outer gradient)}
+  def accumulateObjectiveGradient(accumulator: WeightsMapAccumulator, features: FeatureTemplateVariable[V], gradient: Tensor1, weight: Double = 1) {
+    templatesWithWeights.foreach { case (t,d,w) => accumulator.accumulate(w, features.featureVectorMap(t).value outer gradient, weight)}
   }
-  def score(features: FeatureTemplateVariable[V]): Tensor1 = {
+
+
+
+  def predict(features: FeatureTemplateVariable[V]): Tensor1 = {
     val v0 = new DenseTensor1(outputSize)
     templatesWithWeights.foreach { case (t,_,w) => v0 += w.value.leftMultiply(features.featureVectorMap(t).value) }
     v0
@@ -121,4 +125,3 @@ class BiasFeatureTemplate[V] extends FeatureTemplate[V] {
   def name = "bias"
   def computeFeatures(v: V, ftv: FeatureTemplateVariable[V]) = Seq("bias")
 }
-
