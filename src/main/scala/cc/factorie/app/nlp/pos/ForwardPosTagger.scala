@@ -178,7 +178,7 @@ class ForwardPosTagger extends DocumentAnnotator {
   
   val templates = Seq(WordFeatureTemplate, RestFeatureTemplate)
 
-  val domains = templates.map(t => {val d = new CategoricalFeatureTemplateDomain;d.dimensionDomain})
+  val domains = templates.map(t => new CategoricalFeatureTemplateDomain)
   lazy val model = new MulticlassTemplateModel[PosTemplateInstance](templates.zip(domains), PennPosDomain.size)
 
   /** Local lemmatizer used for POS features. */
