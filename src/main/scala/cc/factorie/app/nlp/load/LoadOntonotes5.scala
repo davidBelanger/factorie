@@ -18,7 +18,7 @@ import java.io.PrintWriter
   5   gold POS tag
   6   auto POS tag
   7   gold feats
-  8	  auto feats
+  8          auto feats
   9   gold head ID
   10  auto head ID
   11  gold dependency label
@@ -64,43 +64,43 @@ object LoadOntonotes5 {
 
         val currTokenIdx = fields(0).toInt - 1
         val word = fields(1)
-        
+
         val goldLemma = fields(2)
         val autoLemma = fields(3)
-        
+
         val goldPartOfSpeech = fields(4)
-        val autoPartOfSpeech = fields(5) 
-        
+        val autoPartOfSpeech = fields(5)
+
         // OFF BY 1!
-        val goldParentIdx = fields(8).toInt - 1 
+        val goldParentIdx = fields(8).toInt - 1
         val autoParentIdx = fields(9).toInt - 1
-        
+
         val goldDepLabel = fields(10)
         val autoDepLabel = fields(11)
-        
-//        var ner = fields(13); if (ner == "_") ner = "O"  // If we wanted to distinguish "unnamed entities" from background, we wouldn't have this.
+
+        //        var ner = fields(13); if (ner == "_") ner = "O"  // If we wanted to distinguish "unnamed entities" from background, we wouldn't have this.
         var ner = "O" // NER reader needs to be revisited to make this work
         document.appendString(" ")
         val token = new Token(sentence, word)
         loadPos match{
-	      case AnnotationTypes.GOLD => {token.attr += new LabeledPennPosTag(token, if (goldPartOfSpeech == "XX") "PUNC" else goldPartOfSpeech)}
-	      case AnnotationTypes.AUTO => {token.attr += new LabeledPennPosTag(token, if (autoPartOfSpeech == "XX") "PUNC" else autoPartOfSpeech)}
-	      case AnnotationTypes.NONE => {/* do nothing */}
+          case AnnotationTypes.GOLD => {token.attr += new LabeledPennPosTag(token, if (goldPartOfSpeech == "XX") "PUNC" else goldPartOfSpeech)}
+          case AnnotationTypes.AUTO => {token.attr += new LabeledPennPosTag(token, if (autoPartOfSpeech == "XX") "PUNC" else autoPartOfSpeech)}
+          case AnnotationTypes.NONE => {/* do nothing */}
         }
         loadLemma match{
-	      case AnnotationTypes.GOLD => {token.attr += new TokenLemma(token, goldLemma)}
-	      case AnnotationTypes.AUTO => {token.attr += new TokenLemma(token, autoLemma)}
-	      case AnnotationTypes.NONE => {/* do nothing */}
+          case AnnotationTypes.GOLD => {token.attr += new TokenLemma(token, goldLemma)}
+          case AnnotationTypes.AUTO => {token.attr += new TokenLemma(token, autoLemma)}
+          case AnnotationTypes.NONE => {/* do nothing */}
         }
         loadLemma match{
-	      case AnnotationTypes.GOLD => {token.attr += new TokenLemma(token, goldLemma)}
-	      case AnnotationTypes.AUTO => {token.attr += new TokenLemma(token, autoLemma)}
-	      case AnnotationTypes.NONE => {/* do nothing */}
+          case AnnotationTypes.GOLD => {token.attr += new TokenLemma(token, goldLemma)}
+          case AnnotationTypes.AUTO => {token.attr += new TokenLemma(token, autoLemma)}
+          case AnnotationTypes.NONE => {/* do nothing */}
         }
         loadParse match{
-	      case AnnotationTypes.GOLD => {depInfoSeq.append((currTokenIdx, goldParentIdx, goldDepLabel))}
-	      case AnnotationTypes.AUTO => {depInfoSeq.append((currTokenIdx, autoParentIdx, autoDepLabel))}
-	      case AnnotationTypes.NONE => {/* do nothing */}
+          case AnnotationTypes.GOLD => {depInfoSeq.append((currTokenIdx, goldParentIdx, goldDepLabel))}
+          case AnnotationTypes.AUTO => {depInfoSeq.append((currTokenIdx, autoParentIdx, autoDepLabel))}
+          case AnnotationTypes.NONE => {/* do nothing */}
         }
         if (loadNer) token.attr += (if (nerBilou) new LabeledBilouOntonotesNerTag(token, ner) else new LabeledBioOntonotesNerTag(token, ner))
       }
