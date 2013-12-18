@@ -11,11 +11,16 @@ import cc.factorie.optimize.Trainer
 import cc.factorie.app.classify.backend._
 
 class ForwardPosTagger extends DocumentAnnotator {
+  
+  final val WINDOW_SIZE = 7	// should always be odd
+  final val WINDOW_PAD = (WINDOW_SIZE-1)/2
+  
   // Different ways to load saved parameters
   def this(stream: InputStream) = { this(); deserialize(stream) }
   def this(file: File) = this(new FileInputStream(file))
   def this(url: java.net.URL) = this(url.openConnection.getInputStream)
 
+<<<<<<< HEAD
   //object FeatureDomain extends CategoricalFeatureTemplateDomain
   //class FeatureVariable(t:Tensor1) extends BinaryFeatureVectorVariable[String] { def domain = FeatureDomain; set(t)(null) } // Only used for printing diagnostics
   //lazy val model = new LinearMulticlassClassifier(PennPosDomain.size, FeatureDomain.dimensionSize)
@@ -25,6 +30,18 @@ class ForwardPosTagger extends DocumentAnnotator {
     val idx = lemmaIndex
     val features = new PosFeatureTemplateVariable
     val label = token.attr[PennPosTag]
+=======
+  // takes a window of tokens, and index to the specific token that this intance is for
+  class PosTemplateInstance(val tokens: List[Token], val idx: Int, val feats: PosFeatureTemplateVariable = new PosFeatureTemplateVariable) {
+    def isValidIdx(i:Int) = (i+idx) < tokens.length && (i+idx) > -1 && tokens(idx+i) != null
+    def token(i:Int=0): Token = if(isValidIdx(i)) tokens(idx+i) else null
+    def word(i:Int=0): String = if(isValidIdx(i)) tokens(idx+i).attr[PosLemma].value else ""
+    def word_lc(i:Int=0): String = if(isValidIdx(i)) tokens(idx+i).attr[PosLemma].lc else ""
+    def docFreqLemma(i:Int=0): String = if(isValidIdx(i) && WordData.docWordCounts.contains(word_lc(i))) word(i) else null
+    def docFreqLemma_lc(i:Int=0): String = if(isValidIdx(i) && WordData.docWordCounts.contains(word_lc(i))) word_lc(i) else null
+    def features = feats
+    def label(i:Int=0): PennPosTag = if(isValidIdx(i)) tokens(idx+i).attr[PennPosTag] else null
+>>>>>>> 63763ce9bc426a38b153adee743efa38aa01ce71
   }
 
   class PosFeatureTemplateVariable extends FeatureTemplateVariable[PosTemplateInstance]
@@ -32,13 +49,18 @@ class ForwardPosTagger extends DocumentAnnotator {
   object WordFeatureTemplate extends FeatureTemplate[PosTemplateInstance] {
     def name = "word"
     def computeFeatures(v: PosTemplateInstance, ftv: FeatureTemplateVariable[PosTemplateInstance]): Seq[String] = {
+<<<<<<< HEAD
       Seq(v.token.string)
+=======
+      Seq(v.word_lc())
+>>>>>>> 63763ce9bc426a38b153adee743efa38aa01ce71
     }
   }
 
   object RestFeatureTemplate extends FeatureTemplate[PosTemplateInstance] {
     def name = "rest"
     def computeFeatures(v: PosTemplateInstance, ftv: FeatureTemplateVariable[PosTemplateInstance]): Seq[String] = {
+<<<<<<< HEAD
       Seq(v.token.string)
 //      def lemmaStringAtOffset(offset: Int): String = "L@" + offset + "=" + lemmas.docFreqLc(lemmaIndex + offset) // this is lowercased
 //      def wordStringAtOffset(offset: Int): String = "W@" + offset + "=" + lemmas.docFreq(lemmaIndex + offset) // this is not lowercased, but still has digits replaced
@@ -160,27 +182,151 @@ class ForwardPosTagger extends DocumentAnnotator {
 //      addFeature("HasDigit=" + (l0.indexOf('0', 4) >= 0)) // The 4 is to skip over "W@0="
 //      //addFeature("MiddleHalfCap="+token.string.matches(".+1/2[A-Z].*")) // Paper says "contains 1/2+capital(s) not at the beginning".  Strange feature.  Why? -akm
 
+=======
+     
+      //println(s"PosTemplateInstance(${v.tokens.map(x => {if(x != null) x.string else "_"}).mkString(",")})")
+      //assert(v.tokens.size == WINDOW_SIZE)
+      
+      var feats = Seq[String]()
+
+      // TODO cleanup (move stuff into instance)
+      def lemmaStringAtOffset(offset: Int): String = "L@" + offset + "=" + v.docFreqLemma_lc(offset) // this is lowercased
+      def wordStringAtOffset(offset: Int): String = "W@" + offset + "=" + v.docFreqLemma(offset) // this is not lowercased, but still has digits replaced
+      def affinityTagAtOffset(offset: Int): String = "A@" + offset + "=" + WordData.ambiguityClasses.getOrElse(v.word_lc(offset), null)
+      def posTagAtOffset(offset: Int): String = { val t = v.token().next(offset); "P@" + offset + (if (t ne null) t.attr[PennPosTag].categoryValue else null) }
+      def takePrefix(str: String, n: Int): String = s"PREFIX=${if (n <= str.length) str.substring(0, n) else ""}"
+      def takeSuffix(str: String, n: Int): String = { val l = str.length; s"SUFFIX=${if (n <= l) str.substring(l - n, l) else ""}"}
+      
+      // Original word, with digits replaced, no @
+      val Wm2 = v.word(-2)
+      val Wm1 = v.word(-1)
+      val W = v.word(0)
+      val Wp1 = v.word(1)
+      val Wp2 = v.word(2)
+      // Original words at offsets, with digits replaced, marked with @
+      val wm3 = wordStringAtOffset(-3)
+      val wm2 = wordStringAtOffset(-2)
+      val wm1 = wordStringAtOffset(-1)
+      val w0 = wordStringAtOffset(0)
+      val wp1 = wordStringAtOffset(1)
+      val wp2 = wordStringAtOffset(2)
+      val wp3 = wordStringAtOffset(3)
+      // Lemmas at offsets
+      val lm2 = lemmaStringAtOffset(-2)
+      val lm1 = lemmaStringAtOffset(-1)
+      val l0 = lemmaStringAtOffset(0)
+      val lp1 = lemmaStringAtOffset(1)
+      val lp2 = lemmaStringAtOffset(2)
+      // Affinity classes at next offsets
+      val a0 = affinityTagAtOffset(0)
+      val ap1 = affinityTagAtOffset(1)
+      val ap2 = affinityTagAtOffset(2)
+      val ap3 = affinityTagAtOffset(3)
+      // POS tags at prev offsets
+      val pm1 = posTagAtOffset(-1)
+      val pm2 = posTagAtOffset(-2)
+      val pm3 = posTagAtOffset(-3)
+      
+      feats :+= wm3
+      feats :+= wm2
+      feats :+= wm1
+      feats :+= w0
+      feats :+= wp1
+      feats :+= wp2
+      feats :+= wp3
+
+      // not in ClearNLP
+      //    addFeature(lp3)
+      //    addFeature(lp2)
+      //    addFeature(lp1)
+      //    addFeature(l0)
+      //    addFeature(lm1)
+      //    addFeature(lm2)
+      //    addFeature(lm3)
+
+      feats :+= pm3
+      feats :+= pm2
+      feats :+= pm1
+      feats :+= a0
+      feats :+= ap1
+      feats :+= ap2
+      feats :+= ap3
+      feats :+= lm2 + lm1
+      feats :+= lm1 + l0
+      feats :+= l0 + lp1
+      feats :+= lp1 + lp2
+      feats :+= lm1 + lp1
+      feats :+= pm2 + pm1
+      feats :+= ap1 + ap2
+      feats :+= pm1 + ap1
+
+      //    addFeature(pm1+a0) // Not in http://www.aclweb.org/anthology-new/P/P12/P12-2071.pdf
+      //    addFeature(a0+ap1) // Not in http://www.aclweb.org/anthology-new/P/P12/P12-2071.pdf
+
+      feats :+= lm2 + lm1 + l0
+      feats :+= lm1 + l0 + lp1
+      feats :+= l0 + lp1 + lp2
+      feats :+= lm2 + lm1 + lp1
+      feats :+= lm1 + lp1 + lp2
+      feats :+= pm2 + pm1 + a0
+      feats :+= pm1 + a0 + ap1
+      feats :+= pm2 + pm1 + ap1
+      feats :+= pm1 + ap1 + ap2
+
+      //    addFeature(a0+ap1+ap2) // Not in http://www.aclweb.org/anthology-new/P/P12/P12-2071.pdf
+
+      feats :+= takePrefix(W, 1)
+      feats :+= takePrefix(W, 2)
+      feats :+= takePrefix(W, 3)
+
+      // not in ClearNLP
+      //    addFeature("PREFIX2@1="+takePrefix(Wp1, 2))
+      //    addFeature("PREFIX3@1="+takePrefix(Wp1, 3))
+      //    addFeature("PREFIX2@2="+takePrefix(Wp2, 2))
+      //    addFeature("PREFIX3@2="+takePrefix(Wp2, 3))
+
+      feats :+= takeSuffix(W, 1)
+      feats :+= takeSuffix(W, 2)
+      feats :+= takeSuffix(W, 3)
+      feats :+= takeSuffix(W, 4)
+
+      // not in ClearNLP
+      //    addFeature("SUFFIX1@1="+takeRight(Wp1, 1))
+      //    addFeature("SUFFIX2@1="+takeRight(Wp1, 2))
+      //    addFeature("SUFFIX3@1="+takeRight(Wp1, 3))
+      //    addFeature("SUFFIX4@1="+takeRight(Wp1, 4))
+      //    addFeature("SUFFIX2@2="+takeRight(Wp2, 2))
+      //    addFeature("SUFFIX3@2="+takeRight(Wp2, 3))
+      //    addFeature("SUFFIX4@2="+takeRight(Wp2, 4))
+      feats :+= "SHAPE@-2=" + cc.factorie.app.strings.stringShape(Wm2, 2)
+      feats :+= "SHAPE@-1=" + cc.factorie.app.strings.stringShape(Wm1, 2)
+      feats :+= "SHAPE@0=" + cc.factorie.app.strings.stringShape(W, 2)
+      feats :+= "SHAPE@1=" + cc.factorie.app.strings.stringShape(Wp1, 2)
+      feats :+= "SHAPE@2=" + cc.factorie.app.strings.stringShape(Wp2, 2)
+      feats :+= "HasPeriod=" + (w0.indexOf('.') >= 0)
+      feats :+= "HasHyphen=" + (w0.indexOf('-') >= 0)
+      feats :+= "HasDigit=" + (l0.indexOf('0', 4) >= 0) // The 4 is to skip over "W@0="
+      //addFeature("MiddleHalfCap="+token.string.matches(".+1/2[A-Z].*")) // Paper says "contains 1/2+capital(s) not at the beginning".  Strange feature.  Why? -akm
+      
+      //println(s"features: ${feats.mkString(" ")}")     
+      feats
+>>>>>>> 63763ce9bc426a38b153adee743efa38aa01ce71
     }
   }
-
+  
   val templates = Seq(WordFeatureTemplate, RestFeatureTemplate)
+<<<<<<< HEAD
 
   val model = new CategoricalTemplateModel[PosTemplateInstance](templates, PennPosDomain.size)
+=======
+  val domains = templates.map(t => new CategoricalFeatureTemplateDomain)
+  lazy val model = new MulticlassTemplateModel[PosTemplateInstance](templates.zip(domains), PennPosDomain.size)
+>>>>>>> 63763ce9bc426a38b153adee743efa38aa01ce71
 
   /** Local lemmatizer used for POS features. */
   protected def lemmatize(string: String): String = cc.factorie.app.strings.replaceDigits(string)
-  /** A special IndexedSeq[String] that will return "null" for indices out of bounds, rather than throwing an error */
-  class Lemmas(tokens: Seq[Token]) extends IndexedSeq[String] {
-    val inner: IndexedSeq[String] = tokens.toIndexedSeq.map((t: Token) => cc.factorie.app.strings.replaceDigits(t.string))
-    val innerlc = inner.map(_.toLowerCase)
-    val length: Int = inner.length
-    def apply(i: Int): String = if (i < 0 || i > length - 1) null else inner(i)
-    def lc(i: Int): String = if (i < 0 || i > length - 1) null else innerlc(i)
-    def docFreq(i: Int): String = if ((i < 0 || i > length - 1) || !WordData.docWordCounts.contains(innerlc(i))) null else inner(i)
-    def docFreqLc(i: Int): String = if (i < 0 || i > length - 1 || !WordData.docWordCounts.contains(innerlc(i))) null else innerlc(i)
-  }
-  protected def lemmas(tokens: Seq[Token]) = new Lemmas(tokens)
 
+  // TODO use lemmas in tokens
   /**
    * Infrastructure for building and remembering a list of training data words that nearly always have the same POS tag.
    * Used as cheap "stacked learning" features when looking-ahead to words not yet predicted by this POS tagger.
@@ -287,134 +433,8 @@ class ForwardPosTagger extends DocumentAnnotator {
     }
   }
 
-  //  def features(token:Token, lemmaIndex:Int, lemmas:Lemmas): SparseBinaryTensor1 = {
-  //    def lemmaStringAtOffset(offset:Int): String = "L@"+offset+"="+lemmas.docFreqLc(lemmaIndex + offset) // this is lowercased
-  //    def wordStringAtOffset(offset:Int): String = "W@"+offset+"="+lemmas.docFreq(lemmaIndex + offset) // this is not lowercased, but still has digits replaced
-  //    def affinityTagAtOffset(offset:Int): String = "A@"+offset+"="+WordData.ambiguityClasses.getOrElse(lemmas.lc(lemmaIndex + offset), null)
-  //    def posTagAtOffset(offset:Int): String = { val t = token.next(offset); "P@"+offset+(if (t ne null) t.attr[PennPosTag].categoryValue else null) }
-  //    def takePrefix(s:String, n:Int): String = {if (n <= s.length) "PREFIX="+s.substring(0,n) else null }
-  //    def takeSuffix(s:String, n:Int): String = { val l = s.length; if (n <= l) "SUFFIX="+s.substring(l-n,l) else null }
-  //    val tensor = new SparseBinaryTensor1(FeatureDomain.dimensionSize); tensor.sizeHint(40)
-  //    def addFeature(s:String): Unit = if (s ne null) { val i = FeatureDomain.dimensionDomain.index(s); if (i >= 0) tensor += i }
-  //    // Original word, with digits replaced, no @
-  //    val Wm2 = if (lemmaIndex > 1) lemmas(lemmaIndex-2) else ""
-  //    val Wm1 = if (lemmaIndex > 0) lemmas(lemmaIndex-1) else ""
-  //    val W = lemmas(lemmaIndex)
-  //    val Wp1 = if (lemmaIndex < lemmas.length-1) lemmas(lemmaIndex+1) else ""
-  //    val Wp2 = if (lemmaIndex < lemmas.length-2) lemmas(lemmaIndex+2) else ""
-  //    // Original words at offsets, with digits replaced, marked with @
-  //    val wm3 = wordStringAtOffset(-3)
-  //    val wm2 = wordStringAtOffset(-2)
-  //    val wm1 = wordStringAtOffset(-1)
-  //    val w0 = wordStringAtOffset(0)
-  //    val wp1 = wordStringAtOffset(1)
-  //    val wp2 = wordStringAtOffset(2)
-  //    val wp3 = wordStringAtOffset(3)
-  //    // Lemmas at offsets
-  //    val lm2 = lemmaStringAtOffset(-2)
-  //    val lm1 = lemmaStringAtOffset(-1)
-  //    val l0 = lemmaStringAtOffset(0)
-  //    val lp1 = lemmaStringAtOffset(1)
-  //    val lp2 = lemmaStringAtOffset(2)
-  //    // Affinity classes at next offsets
-  //    val a0 = affinityTagAtOffset(0)
-  //    val ap1 = affinityTagAtOffset(1)
-  //    val ap2 = affinityTagAtOffset(2)
-  //    val ap3 = affinityTagAtOffset(3)
-  //    // POS tags at prev offsets
-  //    val pm1 = posTagAtOffset(-1)
-  //    val pm2 = posTagAtOffset(-2)
-  //    val pm3 = posTagAtOffset(-3)
-  //    addFeature(wm3)
-  //    addFeature(wm2)
-  //    addFeature(wm1)
-  //    addFeature(w0)
-  //    addFeature(wp1)
-  //    addFeature(wp2)
-  //    addFeature(wp3)
-  //    // The paper also includes wp3 and wm3
-  //    
-  //    // not in ClearNLP
-  ////    addFeature(lp3)
-  ////    addFeature(lp2)
-  ////    addFeature(lp1)
-  ////    addFeature(l0)
-  ////    addFeature(lm1)
-  ////    addFeature(lm2)
-  ////    addFeature(lm3)
-  //    
-  //    addFeature(pm3)
-  //    addFeature(pm2)
-  //    addFeature(pm1)
-  //    addFeature(a0)
-  //    addFeature(ap1)
-  //    addFeature(ap2)
-  //    addFeature(ap3)
-  //    addFeature(lm2+lm1)
-  //    addFeature(lm1+l0)
-  //    addFeature(l0+lp1)
-  //    addFeature(lp1+lp2)
-  //    addFeature(lm1+lp1)
-  //    addFeature(pm2+pm1)
-  //    addFeature(ap1+ap2)
-  //    addFeature(pm1+ap1)
-  //    
-  ////    addFeature(pm1+a0) // Not in http://www.aclweb.org/anthology-new/P/P12/P12-2071.pdf
-  ////    addFeature(a0+ap1) // Not in http://www.aclweb.org/anthology-new/P/P12/P12-2071.pdf
-  //    
-  //    addFeature(lm2+lm1+l0)
-  //    addFeature(lm1+l0+lp1)
-  //    addFeature(l0+lp1+lp2)
-  //    addFeature(lm2+lm1+lp1)
-  //    addFeature(lm1+lp1+lp2)
-  //    addFeature(pm2+pm1+a0)
-  //    addFeature(pm1+a0+ap1)
-  //    addFeature(pm2+pm1+ap1)
-  //    addFeature(pm1+ap1+ap2)
-  //    
-  ////    addFeature(a0+ap1+ap2) // Not in http://www.aclweb.org/anthology-new/P/P12/P12-2071.pdf
-  //    
-  //    addFeature(takePrefix(W, 1))
-  //    addFeature(takePrefix(W, 2))
-  //    addFeature(takePrefix(W, 3))
-  //    
-  //    // not in ClearNLP
-  ////    addFeature("PREFIX2@1="+takePrefix(Wp1, 2))
-  ////    addFeature("PREFIX3@1="+takePrefix(Wp1, 3))
-  ////    addFeature("PREFIX2@2="+takePrefix(Wp2, 2))
-  ////    addFeature("PREFIX3@2="+takePrefix(Wp2, 3))
-  //    
-  //    addFeature(takeSuffix(W, 1))
-  //    addFeature(takeSuffix(W, 2))
-  //    addFeature(takeSuffix(W, 3))
-  //    addFeature(takeSuffix(W, 4))
-  //    
-  //    // not in ClearNLP
-  ////    addFeature("SUFFIX1@1="+takeRight(Wp1, 1))
-  ////    addFeature("SUFFIX2@1="+takeRight(Wp1, 2))
-  ////    addFeature("SUFFIX3@1="+takeRight(Wp1, 3))
-  ////    addFeature("SUFFIX4@1="+takeRight(Wp1, 4))
-  ////    addFeature("SUFFIX2@2="+takeRight(Wp2, 2))
-  ////    addFeature("SUFFIX3@2="+takeRight(Wp2, 3))
-  ////    addFeature("SUFFIX4@2="+takeRight(Wp2, 4))
-  //    addFeature("SHAPE@-2="+cc.factorie.app.strings.stringShape(Wm2, 2))
-  //    addFeature("SHAPE@-1="+cc.factorie.app.strings.stringShape(Wm1, 2))
-  //    addFeature("SHAPE@0="+cc.factorie.app.strings.stringShape(W, 2))
-  //    addFeature("SHAPE@1="+cc.factorie.app.strings.stringShape(Wp1, 2))
-  //    addFeature("SHAPE@2="+cc.factorie.app.strings.stringShape(Wp2, 2))
-  //    // TODO(apassos): add the remaining jinho features not contained in shape
-  //    addFeature("HasPeriod="+(w0.indexOf('.') >= 0))
-  //    addFeature("HasHyphen="+(w0.indexOf('-') >= 0))
-  //    addFeature("HasDigit="+(l0.indexOf('0', 4) >= 0)) // The 4 is to skip over "W@0="
-  //    //addFeature("MiddleHalfCap="+token.string.matches(".+1/2[A-Z].*")) // Paper says "contains 1/2+capital(s) not at the beginning".  Strange feature.  Why? -akm
-  //    tensor
-  //  }
-  //  def features(tokens:Seq[Token]): Seq[SparseBinaryTensor1] = {
-  //    val lemmaStrings = lemmas(tokens)
-  //    tokens.zipWithIndex.map({case (t:Token, i:Int) => features(t, i, lemmaStrings)})
-  //  }
-
   var exampleSetsToPrediction = false
+<<<<<<< HEAD
   class SentenceClassifierExample(val tokens: Seq[Token], model: CategoricalTemplateModel[PosTemplateInstance], lossAndGradient: optimize.OptimizableObjectives.Multiclass) extends optimize.Example {
     def accumulateValueAndGradient(value: DoubleAccumulator, gradient: WeightsMapAccumulator) {
       val lemmaStrings = lemmas(tokens)
@@ -431,26 +451,51 @@ class ForwardPosTagger extends DocumentAnnotator {
         tmpExample.accumulateValueAndGradient(value,gradient)
         if (exampleSetsToPrediction) {
           posLabel.set(model.classification(ins.features).bestLabelIndex)(null)
+=======
+  class SentenceClassifierExample(val instances: Seq[PosTemplateInstance], model: MulticlassTemplateModel[PosTemplateInstance], lossAndGradient: optimize.OptimizableObjectives.Multiclass) extends optimize.Example {
+    def accumulateValueAndGradient(value: DoubleAccumulator, gradient: WeightsMapAccumulator) {
+      instances.foreach(ins => {
+        model.getFeatureVectors(ins)
+        val tmpExample = new optimize.PredictorExample(model,ins.features,ins.label().intValue,lossAndGradient,1.0)
+        tmpExample.accumulateValueAndGradient(value,gradient)
+        if (exampleSetsToPrediction) {
+          ins.token().attr[LabeledPennPosTag].set(model.classification(ins.features).bestLabelIndex)(null)
+>>>>>>> 63763ce9bc426a38b153adee743efa38aa01ce71
         }
-      }
+      })
     }
   }
 
-  def predict(tokens: Seq[Token]): Unit = {
-    val lemmaStrings = lemmas(tokens)
-    for (index <- 0 until tokens.length) {
-      val token = tokens(index)
-      if (token.attr[PennPosTag] eq null) token.attr += new PennPosTag(token, "NNP")
-      if (WordData.sureTokens.contains(token.string)) {
-        token.attr[PennPosTag].set(WordData.sureTokens(token.string))(null)
+  def predict(instances: => Seq[PosTemplateInstance]): Unit = instances.foreach(ins => predict(ins))
+  
+  def predict(ins: PosTemplateInstance): Unit = {
+    val tok = ins.token()
+      if (tok.attr[PennPosTag] eq null) tok.attr += new PennPosTag(tok, "NNP")
+      if (WordData.sureTokens.contains(tok.string)) {
+        tok.attr[PennPosTag].set(WordData.sureTokens(tok.string))(null)
       } else {
+<<<<<<< HEAD
         val ins = new PosTemplateInstance(token,index,lemmaStrings)
         model.getFeatureVectors(ins)
         //val featureVector = model.getFeatureVectors(new PosTemplateDomain(token, index, lemmaStrings)).featureVectorMap(WordFeatureTemplate)//features(token, index, lemmaStrings)
         token.attr[PennPosTag].set(model.classification(ins.features).bestLabelIndex)(null)
+=======
+        model.getFeatureVectors(ins)
+        //println(s"ins.features.size: ${ins.features.featureVectorMap()}")
+        tok.attr[PennPosTag].set(model.classification(ins.features).bestLabelIndex)(null)
+>>>>>>> 63763ce9bc426a38b153adee743efa38aa01ce71
       }
-    }
   }
+  
+  def predict(tokens: Seq[Token]): Unit = predict(generateInstances(tokens, WINDOW_PAD))
+  
+  def generateInstances(tokens: Seq[Token], windowSize: Int): Seq[PosTemplateInstance] = windows(tokens.toList).map(win => new PosTemplateInstance(win, WINDOW_PAD))
+  
+  // TODO make this generic
+  def windows(l: List[Token]): List[List[Token]] = {
+    (List.fill[Token](WINDOW_PAD)(null) ::: l ::: List.fill[Token](WINDOW_PAD)(null)).sliding(WINDOW_SIZE).toList
+  }
+    
   def predict(span: TokenSpan): Unit = predict(span.tokens)
   def predict(document: Document): Unit = {
     for (section <- document.sections)
@@ -494,59 +539,98 @@ class ForwardPosTagger extends DocumentAnnotator {
     dstream.close() // TODO Are we really supposed to close here, or is that the responsibility of the caller
   }
 
-  def printAccuracy(sentences: Iterable[Sentence], extraText: String) = {
-    var (tokAcc, senAcc, speed, _) = accuracy(sentences)
+  def printAccuracy(instancesBySentence: Seq[Seq[PosTemplateInstance]], extraText: String) = {
+    var(tokAcc, senAcc, speed, _) = accuracy(instancesBySentence)
     println(extraText + s"$tokAcc token accuracy, $senAcc sentence accuracy, $speed tokens/sec")
   }
+  
+//  def printAccuracy(sentences: Seq[Sentence], extraText: String) = {
+//    val testInstancesBySentence = sentences.map(s => generateInstances(s.tokens, WINDOW_PAD))
+//    printAccuracy(testInstancesBySentence)
+//  }
 
-  def accuracy(sentences: Iterable[Sentence]): (Double, Double, Double, Double) = {
+//  def accuracy(instances: Seq[Seq[PosTemplateInstance]]): (Double, Double) = {
+//    var tokenCorrect = 0.0
+//    var totalTime = 0.0
+//    instances.foreach(ins => {
+//      val t0 = System.currentTimeMillis()
+//      predict(ins)
+//      totalTime += (System.currentTimeMillis() - t0)
+//      if (ins.token().attr[LabeledPennPosTag].valueIsTarget) tokenCorrect += 1.0
+//    })
+//    val tokensPerSecond = (instances.size / totalTime) * 1000.0
+//    (tokenCorrect/instances.size, tokensPerSecond)
+//  }
+  
+  def accuracy(instancesBySentence: Seq[Seq[PosTemplateInstance]]): (Double, Double, Double, Double) = {
     var tokenTotal = 0.0
     var tokenCorrect = 0.0
     var totalTime = 0.0
     var sentenceCorrect = 0.0
     var sentenceTotal = 0.0
-    sentences.foreach(s => {
+    instancesBySentence.foreach(s => {
       var thisSentenceCorrect = 1.0
       val t0 = System.currentTimeMillis()
-      process(s) //predict(s)
+      predict(s) //predict(s)
       totalTime += (System.currentTimeMillis() - t0)
-      for (token <- s.tokens) {
+      s.foreach(ins => {
         tokenTotal += 1
-        if (token.attr[LabeledPennPosTag].valueIsTarget) tokenCorrect += 1.0
+        if (ins.token().attr[LabeledPennPosTag].valueIsTarget) tokenCorrect += 1.0
         else thisSentenceCorrect = 0.0
-      }
+      })
       sentenceCorrect += thisSentenceCorrect
       sentenceTotal += 1.0
     })
     val tokensPerSecond = (tokenTotal / totalTime) * 1000.0
     (tokenCorrect / tokenTotal, sentenceCorrect / sentenceTotal, tokensPerSecond, tokenTotal)
   }
+  
+  def addPosLemmas(tokens: Seq[Token]) = tokens.foreach(tok => tok.attr += new PosLemma(tok, lemmatize(tok.string)))
 
-  def test(sentences: Iterable[Sentence]) = {
+  def test(sentences: Seq[Sentence]) = {
     println("Testing on " + sentences.size + " sentences...")
-    val (tokAccuracy, sentAccuracy, speed, tokens) = accuracy(sentences)
-    println("Tested on " + tokens + " tokens at " + speed + " tokens/sec")
-    println("Token accuracy: " + tokAccuracy)
-    println("Sentence accuracy: " + sentAccuracy)
+    // TODO re-use code
+    val testTokens = sentences.flatMap(_.tokens)
+    addPosLemmas(testTokens)
+    val testInstancesBySentence = sentences.map(s => generateInstances(s.tokens, WINDOW_PAD))
+    val (tokAcc,  speed, sentAcc, toks) = accuracy(testInstancesBySentence)
+    println("Tested on " + toks + " tokens at " + speed + " tokens/sec")
+    println("Token accuracy: " + tokAcc)
+    println("Sentence accuracy: " + sentAcc)
   }
 
-  def train(trainSentences: Seq[Sentence], testSentences: Seq[Sentence], lrate: Double = 0.1, decay: Double = 0.01, cutoff: Int = 2, doBootstrap: Boolean = true, useHingeLoss: Boolean = false, numIterations: Int = 5, l1Factor: Double = 0.000001, l2Factor: Double = 0.000001)(implicit random: scala.util.Random) {
+  def train(trainSentences: Seq[Sentence], testSentences: Seq[Sentence], lrate: Double = 0.1, decay: Double = 0.01, cutoff: Int = 2, doBootstrap: Boolean = true, useHingeLoss: Boolean = false, numIterations: Int = 5, l1Factor: Double = 0.000001, l2Factor: Double = 0.000001)(implicit random: scala.util.Random): Double = {
     // TODO Accomplish this TokenNormalization instead by calling POS3.preProcess
     //for (sentence <- trainSentences ++ testSentences; token <- sentence.tokens) cc.factorie.app.nlp.segment.PlainTokenNormalizer.processToken(token)
 
     val trainTokens = trainSentences.flatMap(_.tokens)
-
+    val testTokens = testSentences.flatMap(_.tokens)
+    
+    addPosLemmas(trainTokens)
+    addPosLemmas(testTokens)
+    
+    // TODO make this a parameter, also make cutoff (1 below) a parameter, and thresholds in WordData
     val toksPerDoc = 5000
     WordData.computeWordFormsByDocumentFrequency(trainTokens, 1, toksPerDoc)
     WordData.computeAmbiguityClasses(trainTokens)
+    
+    // how many of our lemmas had only one pos?
+    // cutoff here is 1, which means this is not including words that were seen only once
+    val tagCounts = WordData.ambiguityClasses.mapValues(_.count(_ == '_') + 1)
+    val tagCountsWordCounts = tagCounts.zip(WordData.docWordCounts.values)
+    println(s"min observed: ${tagCountsWordCounts.minBy(_._2)}; max observed: ${tagCountsWordCounts.maxBy(_._2)}")
+    println(s"min tags observed: ${tagCounts.minBy(_._2)}; max tags observed: ${tagCounts.maxBy(_._2)}")
+    for(i <- 2 to tagCountsWordCounts.values.max by 5)
+      println(s"Percent of lemmas with one observed tag, lemma count cutoff $i: ${tagCountsWordCounts.filter(_._2 > i).count(_._1._2 == 1)/tagCounts.size.toDouble}")
 
-    val trainLemmas = lemmas(trainTokens)
+    
     // Prune features by count
     //    FeatureDomain.domain.dimensionDomain.gatherCounts = true
     //    for (sentence <- trainSentences) features(sentence.tokens) // just to create and count all features
     //    FeatureDomain.domain.dimensionDomain.trimBelowCount(cutoff)
     //    FeatureDomain.domain.freeze()
     //    println("After pruning using %d features.".format(FeatureDomain.domain.dimensionDomain.size))
+<<<<<<< HEAD
     val domains = templates.map(t => new CategoricalFeatureTemplateDomain)
 
     //David: These lines don't make sense to me, but it also seems that you are not using their output
@@ -555,20 +639,41 @@ class ForwardPosTagger extends DocumentAnnotator {
 //      templates.zip(domains).foreach(td => td._1.addFeatureVector(i, i.features, td._2))
 ////    })
 
-    println("finished computing features")
+=======
+    
+    val trainInstancesBySentence = trainSentences.map(s => generateInstances(s.tokens, WINDOW_PAD))
+    val testInstancesBySentence = trainSentences.map(s => generateInstances(s.tokens, WINDOW_PAD))
 
+    trainInstancesBySentence.flatten.foreach(ins => {
+      templates.zip(domains).foreach(td => {td._1.addFeatureVector(ins, ins.features, td._2)})
+      //println(ins.features.featureVectorMap(WordFeatureTemplate).toString)
+    })
+    
+    templates.zip(domains).foreach(t => println(s"template ${t._1.name} domain size: ${t._2.size}"))
+    
+>>>>>>> 63763ce9bc426a38b153adee743efa38aa01ce71
+    println("finished computing features")
+    
+    println("Generating examples...")
+    val examples = trainInstancesBySentence.shuffle.par.map(sentenceInstances =>
+      new SentenceClassifierExample(sentenceInstances, model, if (useHingeLoss) cc.factorie.optimize.OptimizableObjectives.hingeMulticlass else cc.factorie.optimize.OptimizableObjectives.sparseLogMulticlass)).seq
+    
+    //val optimizer = new cc.factorie.optimize.AdaGrad(rate=lrate)
+    val optimizer = new cc.factorie.optimize.AdaGradRDA(rate = lrate, l1 = l1Factor / examples.length, l2 = l2Factor / examples.length)
+    
     //println("POS1.train\n"+trainSentences(3).tokens.map(_.string).zip(features(trainSentences(3).tokens).map(t => new FeatureVariable(t).toString)).mkString("\n"))
     def evaluate() {
       exampleSetsToPrediction = doBootstrap
-      printAccuracy(trainSentences, "Training: ")
-      printAccuracy(testSentences, "Testing: ")
+      printAccuracy(trainInstancesBySentence, "Training: ")
+      printAccuracy(testInstancesBySentence, "Testing: ")
       //println(s"Sparsity: ${model.weights.value.toSeq.count(_ == 0).toFloat/model.weights.value.length}")
     }
-    val examples = trainSentences.shuffle.par.map(sentence =>
-      new SentenceClassifierExample(sentence.tokens, model, if (useHingeLoss) cc.factorie.optimize.OptimizableObjectives.hingeMulticlass else cc.factorie.optimize.OptimizableObjectives.sparseLogMulticlass)).seq
-    //val optimizer = new cc.factorie.optimize.AdaGrad(rate=lrate)
-    val optimizer = new cc.factorie.optimize.AdaGradRDA(rate = lrate, l1 = l1Factor / examples.length, l2 = l2Factor / examples.length)
+    
+    println("Training...")
     Trainer.onlineTrain(model.parameters, examples, maxIterations = numIterations, optimizer = optimizer, evaluate = evaluate, useParallelTrainer = false)
+    printAccuracy(trainInstancesBySentence, "Training: ")
+    printAccuracy(testInstancesBySentence, "Testing: ")
+    
     if (false) {
       // Print test results to file
       val source = new java.io.PrintStream(new File("pos1-test-output.txt"))
@@ -578,6 +683,7 @@ class ForwardPosTagger extends DocumentAnnotator {
       }
       source.close()
     }
+    accuracy(testInstancesBySentence)._1
   }
 
   def process(d: Document) = { predict(d); d }
@@ -683,16 +789,16 @@ object ForwardPosTrainer extends HyperparameterMain {
 
     pos.train(trainSentences, testSentences,
       opts.rate.value, opts.delta.value, opts.cutoff.value, opts.updateExamples.value, opts.useHingeLoss.value, numIterations = opts.numIters.value.toInt, l1Factor = opts.l1.value, l2Factor = opts.l2.value)
-    if (opts.saveModel.value) {
-      pos.serialize(opts.modelFile.value)
-      val pos2 = new ForwardPosTagger
-      pos2.deserialize(new java.io.File(opts.modelFile.value))
-      pos.printAccuracy(testDocs.flatMap(_.sentences), "pre-serialize accuracy: ")
-      pos2.printAccuracy(testDocs.flatMap(_.sentences), "post-serialize accuracy: ")
-    }
-    val acc = pos.accuracy(testDocs.flatMap(_.sentences))._1
-    if (opts.targetAccuracy.wasInvoked) cc.factorie.assertMinimalAccuracy(acc, opts.targetAccuracy.value.toDouble)
-    acc
+//    if (opts.saveModel.value) {
+//      pos.serialize(opts.modelFile.value)
+//      val pos2 = new ForwardPosTagger
+//      pos2.deserialize(new java.io.File(opts.modelFile.value))
+//      pos.printAccuracy(testDocs.flatMap(_.sentences), "pre-serialize accuracy: ")
+//      pos2.printAccuracy(testDocs.flatMap(_.sentences), "post-serialize accuracy: ")
+//    }
+//    val acc = pos.accuracy(testDocs.flatMap(_.sentences))._1
+//    if (opts.targetAccuracy.wasInvoked) cc.factorie.assertMinimalAccuracy(acc, opts.targetAccuracy.value.toDouble)
+//    acc
   }
 }
 
@@ -727,4 +833,3 @@ object ForwardPosOptimizer {
     println("Done")
   }
 }
-
