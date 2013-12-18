@@ -465,14 +465,21 @@ class ForwardPosTagger extends DocumentAnnotator {
     //    println("After pruning using %d features.".format(FeatureDomain.domain.dimensionDomain.size))
 
     
-    val trainInstancesBySentence = trainSentences.map(s => generateInstances(s.tokens, WINDOW_PAD))
-    val testInstancesBySentence = trainSentences.map(s => generateInstances(s.tokens, WINDOW_PAD))
+      val trainInstancesBySentence = trainSentences.map(s => generateInstances(s.tokens, WINDOW_PAD))
 
-    trainInstancesBySentence.flatten.foreach(ins => {
-      templates.zip(domains).foreach(td => {td._1.addFeatureVector(ins, ins.features, td._2)})
-      //println(ins.features.featureVectorMap(WordFeatureTemplate).toString)
-    })
-    
+      trainInstancesBySentence.flatten.foreach(ins => {
+        templates.zip(domains).foreach(td => {td._1.addFeatureVector(ins, ins.features, td._2)})
+        //println(ins.features.featureVectorMap(WordFeatureTemplate).toString)
+      })
+
+
+      domains.foreach(_.freeze())
+      val testInstancesBySentence = testSentences.map(s => generateInstances(s.tokens, WINDOW_PAD))
+      testInstancesBySentence.flatten.foreach(ins => {
+        templates.zip(domains).foreach(td => {td._1.addFeatureVector(ins, ins.features, td._2)})
+        //println(ins.features.featureVectorMap(WordFeatureTemplate).toString)
+      })
+
     templates.zip(domains).foreach(t => println(s"template ${t._1.name} domain size: ${t._2.size}"))
     
     println("finished computing features")

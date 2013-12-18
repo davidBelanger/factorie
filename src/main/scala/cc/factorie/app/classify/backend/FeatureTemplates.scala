@@ -18,7 +18,9 @@ trait FeatureTemplateDomain  {
 
 class CategoricalFeatureTemplateDomain extends FeatureTemplateDomain with  CategoricalVectorDomain[String]{
   def size = this.dimensionSize
-  def newBlankFeatureVectorVar(template: FeatureTemplate[_]) = new FeatureTemplateVectorVariable(template,this)
+  def newBlankFeatureVectorVar(template: FeatureTemplate[_]) = new FeatureTemplateVectorVariable(template,this){
+    override def skipNonCategories = dimensionDomain.frozen
+  }
 }
 
 class HashedFeatureTemplateDomain(size: Int) extends DiscreteDomain(size) with FeatureTemplateDomain {
