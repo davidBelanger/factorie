@@ -373,7 +373,7 @@ object Trainer {
    * @param useOnlineTrainer Whether to use online training
    * @param logEveryN How often to log, if using online training
    */
-  def train(parameters: WeightsSet, examples: Seq[Example], maxIterations: Int, evaluate: () => Unit, optimizer: GradientOptimizer, useParallelTrainer: Boolean, useOnlineTrainer: Boolean, logEveryN: Int = -1, nThreads: Int = Runtime.getRuntime.availableProcessors(), shuffle: Boolean = true,miniBatch: Int)(implicit random: scala.util.Random) {
+  def train(parameters: WeightsSet, examples: Seq[Example], maxIterations: Int, evaluate: () => Unit, optimizer: GradientOptimizer, useParallelTrainer: Boolean, useOnlineTrainer: Boolean, logEveryN: Int = -1, nThreads: Int = Runtime.getRuntime.availableProcessors(),miniBatch: Int)(implicit random: scala.util.Random) {
     parameters.keys.foreach(_.value) // make sure we initialize the values in a single thread
     optimizer.initializeWeights(parameters)
     val actualEx: Seq[Example] = if (miniBatch == -1) examples else MiniBatchExample(miniBatch, examples).toSeq
@@ -384,7 +384,7 @@ object Trainer {
     trainer match { case t: ParallelOnlineTrainer => t.replaceTensorsWithLocks(); case _ => }
     try {
       while (!trainer.isConverged) {
-        trainer.processExamples(if(shuffle) actualEx.shuffle else actualEx)
+        trainer.processExamples(actualEx.shuffle )
         optimizer match { case o: ParameterAveraging => o.setWeightsToAverage(parameters); case _ => }
         evaluate()
         optimizer match { case o: ParameterAveraging => o.unSetWeightsToAverage(parameters); case _ => }

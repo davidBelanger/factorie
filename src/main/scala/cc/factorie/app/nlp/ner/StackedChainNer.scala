@@ -29,6 +29,7 @@ import cc.factorie.optimize.{ParameterAveraging, AdaGrad}
 import cc.factorie.variable._
 import cc.factorie.optimize.Trainer
 import cc.factorie.la.WeightsMapAccumulator
+import java.util.zip.GZIPInputStream
 
 
 class TokenSequence[T<:NerTag](token: Token)(implicit m: Manifest[T]) extends collection.mutable.ArrayBuffer[Token] {
@@ -593,7 +594,7 @@ class StackedChainNerOpts extends CmdOptions with SharedNLPCmdOptions{
   val saveModel = new CmdOption("save-model", false, "BOOLEAN", "Whether to save the model")
   val runOnlyHere = new CmdOption("runOnlyHere", false, "BOOLEAN", "Run Experiments only on this machine")
 
-  val dataDir = new CmdOption("data", "/home/vineet/canvas/embeddings/data/conll2003/", "STRING", "CONLL data path")
+  val embeddingFile = new CmdOption("embeddingFile", "/home/vineet/canvas/embeddings/data/conll2003/", "STRING", "path to word2vec format file")
   val embeddingDim = new CmdOption("embeddingDim", 100, "INT", "embedding dimension")
   val embeddingScale = new CmdOption("embeddingScale", 10.0, "FLOAT", "The scale of the embeddings")
   val useOffsetEmbedding = new CmdOption("useOffsetEmbeddings", true, "BOOLEAN", "Whether to use offset embeddings")
@@ -604,7 +605,9 @@ object ConllStackedChainNerTrainer extends HyperparameterMain {
     // Parse command-line
     val opts = new StackedChainNerOpts
     opts.parse(args)
-    val ner = new ConllStackedChainNer(null: SkipGramEmbedding, opts.embeddingDim.value, opts.embeddingScale.value, opts.useOffsetEmbedding.value)
+
+    val embedding = if(opts.embeddingFile.wasInvoked)  new SkipGramEmbedding(() => new FileInputStream(opts.embeddingFile.value),opts.embeddingDim.value) else null
+    val ner = new ConllStackedChainNer(embedding, opts.embeddingDim.value, opts.embeddingScale.value, opts.useOffsetEmbedding.value)
 
     ner.aggregate = opts.aggregateTokens.wasInvoked
 
