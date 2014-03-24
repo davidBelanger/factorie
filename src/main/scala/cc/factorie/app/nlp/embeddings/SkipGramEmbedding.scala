@@ -5,10 +5,10 @@ import cc.factorie.la
 import java.util.zip.GZIPInputStream
 import cc.factorie.app.nlp.embeddings
 
-object SkipGramEmbedding extends embeddings.SkipGramEmbedding(() => ClasspathURL.fromDirectory[SkipGramEmbedding]("skip-gram-d100.W.gz").openConnection().getInputStream, 100)
+object SkipGramEmbedding extends embeddings.SkipGramEmbedding(() => ClasspathURL.fromDirectory[SkipGramEmbedding]("skip-gram-d100.W.gz").openConnection().getInputStream, 100,-1)
 
-class SkipGramEmbedding(val inputStreamFactory: () => java.io.InputStream, dimensionSize: Int) extends scala.collection.mutable.LinkedHashMap[String,la.DenseTensor1] {
-  def sourceFactory(): io.Source = io.Source.fromInputStream(new GZIPInputStream(inputStreamFactory()))
+class SkipGramEmbedding(val inputStreamFactory: () => java.io.InputStream, dimensionSize: Int,numTake: Int = -1) extends scala.collection.mutable.LinkedHashMap[String,la.DenseTensor1] {
+  def sourceFactory(): io.Source = io.Source.fromInputStream(new GZIPInputStream(inputStreamFactory()),"iso-8859-1")
 
   println("Reading Word Embeddings with dimension: %d".format(dimensionSize))
 
@@ -16,14 +16,14 @@ class SkipGramEmbedding(val inputStreamFactory: () => java.io.InputStream, dimen
   def initialize() {
     val source = sourceFactory()
     var count = 0
-    val lines = source.getLines()
-//    val firstLine = lines.next()
-//    val firstFields = firstLine.split("\\s+")
-//    val numLines = firstFields(0).toInt
-//    val dimension = firstFields(1).toInt
-//    assert(dimension == dimensionSize,"the specified dimension %d does not agree with the dimension %d given in the input file".format(dimension,dimensionSize))
+    val lines = if(numTake > 0) source.getLines().take(numTake) else source.getLines()
+    val firstLine = lines.next()
+    val firstFields = firstLine.split("\\s+")
+    val numLines = firstFields(0).toInt
+    val dimension = firstFields(1).toInt
+    assert(dimension == dimensionSize,"the specified dimension %d does not agree with the dimension %d given in the input file".format(dimension,dimensionSize))
+
     for (line <- lines) {
-      println(line)
       val fields = line.split("\\s+")
       val tensor = new la.DenseTensor1(fields.drop(1).map(_.toDouble))
       assert(tensor.dim1 == dimensionSize,"the tensor has length " + tensor.dim1 + " , but it should have length + " + dimensionSize)

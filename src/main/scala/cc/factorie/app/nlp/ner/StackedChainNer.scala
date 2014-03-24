@@ -606,7 +606,7 @@ object ConllStackedChainNerTrainer extends HyperparameterMain {
     val opts = new StackedChainNerOpts
     opts.parse(args)
 
-    val embedding = if(opts.embeddingFile.wasInvoked)  new SkipGramEmbedding(() => new FileInputStream(opts.embeddingFile.value),opts.embeddingDim.value) else null
+    val embedding = if(opts.embeddingFile.wasInvoked)  new SkipGramEmbedding(() => new FileInputStream(opts.embeddingFile.value),opts.embeddingDim.value,10000) else null
     val ner = new ConllStackedChainNer(embedding, opts.embeddingDim.value, opts.embeddingScale.value, opts.useOffsetEmbedding.value)
 
     ner.aggregate = opts.aggregateTokens.wasInvoked
