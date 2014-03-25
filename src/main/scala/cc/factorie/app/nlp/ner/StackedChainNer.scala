@@ -41,7 +41,7 @@ class TokenSequence[T<:NerTag](token: Token)(implicit m: Manifest[T]) extends co
 class StackedChainNer[L<:NerTag](labelDomain: CategoricalDomain[String],
                         newLabel: (Token, String) => L,
                         labelToToken: L => Token,
-                        embeddingMap: SkipGramEmbedding,
+                        embeddingMap: WordEmbedding,
                         embeddingDim: Int,
                         scale: Double,
                         useOffsetEmbedding: Boolean,
@@ -563,7 +563,7 @@ class StackedChainNer[L<:NerTag](labelDomain: CategoricalDomain[String],
   }
 }
 
-class ConllStackedChainNer(embeddingMap: SkipGramEmbedding,
+class ConllStackedChainNer(embeddingMap: WordEmbedding,
                 embeddingDim: Int,
                 scale: Double,
                 useOffsetEmbedding: Boolean,
@@ -577,27 +577,23 @@ class ConllStackedChainNer(embeddingMap: SkipGramEmbedding,
     } else document
   }
 }
-//object ConllStackedChainNer extends ConllStackedChainNer(SkipGramEmbedding, 100, 1.0, true, ClasspathURL[ConllStackedChainNer](".factorie"))
+//object ConllStackedChainNer extends ConllStackedChainNer(WordEmbedding, 100, 1.0, true, ClasspathURL[ConllStackedChainNer](".factorie"))
 
 class NoEmbeddingsConllStackedChainNer(url:java.net.URL) extends ConllStackedChainNer(null, 0, 0.0, false, url)
 object NoEmbeddingsConllStackedChainNer extends NoEmbeddingsConllStackedChainNer(ClasspathURL[NoEmbeddingsConllStackedChainNer](".factorie"))
 
-class StackedChainNerOpts extends CmdOptions with SharedNLPCmdOptions{
+class StackedChainNerOpts extends CmdOptions with WordEmbeddingOptions with SharedNLPCmdOptions{
   val trainFile =     new CmdOption("train", "eng.train", "FILE", "CoNLL formatted training file.")
   val testFile  =     new CmdOption("test",  "eng.testb", "FILE", "CoNLL formatted test file.")
   val modelDir =      new CmdOption("model", "StackedNER.factorie", "FILE", "File for saving or loading model.")
   val runXmlDir =     new CmdOption("run-xml", "xml", "DIR", "Directory for reading NYTimes XML data on which to run saved model.")
-  val brownClusFile = new CmdOption("brown", "", "FILE", "File containing brown clusters.")
+  val useBrown = new CmdOption("use-brown",false, "BOOLEAN", "whether to use brown clusters")
+  val brownClusFile = new CmdOption("brown-file", "", "FILE", "File containing brown clusters.")
   val aggregateTokens = new CmdOption("aggregate", true, "BOOLEAN", "Turn on context aggregation feature.")
   val rate =  new CmdOption("rate", 0.18, "DOUBLE", "Learning rate")
   val delta =  new CmdOption("delta", 0.066, "DOUBLE", "Learning delta")
   val saveModel = new CmdOption("save-model", false, "BOOLEAN", "Whether to save the model")
   val runOnlyHere = new CmdOption("runOnlyHere", false, "BOOLEAN", "Run Experiments only on this machine")
-
-  val embeddingFile = new CmdOption("embeddingFile", "/home/vineet/canvas/embeddings/data/conll2003/", "STRING", "path to word2vec format file")
-  val embeddingDim = new CmdOption("embeddingDim", 100, "INT", "embedding dimension")
-  val embeddingScale = new CmdOption("embeddingScale", 10.0, "FLOAT", "The scale of the embeddings")
-  val useOffsetEmbedding = new CmdOption("useOffsetEmbeddings", true, "BOOLEAN", "Whether to use offset embeddings")
 }
 
 object ConllStackedChainNerTrainer extends HyperparameterMain {
@@ -605,13 +601,14 @@ object ConllStackedChainNerTrainer extends HyperparameterMain {
     // Parse command-line
     val opts = new StackedChainNerOpts
     opts.parse(args)
-
-    val embedding = if(opts.embeddingFile.wasInvoked)  new SkipGramEmbedding(() => new FileInputStream(opts.embeddingFile.value),opts.embeddingDim.value,10000) else null
+    val useEmbeddings = opts.useEmbeddings.value
+    if(useEmbeddings) println("using embeddings") else println("not using embeddings")
+    val embedding = if(useEmbeddings)  new WordEmbedding(() => new FileInputStream(opts.embeddingFile.value),opts.embeddingDim.value,opts.numEmbeddingsToTake.value) else null
     val ner = new ConllStackedChainNer(embedding, opts.embeddingDim.value, opts.embeddingScale.value, opts.useOffsetEmbedding.value)
 
-    ner.aggregate = opts.aggregateTokens.wasInvoked
+    ner.aggregate = opts.aggregateTokens.value
 
-    if (opts.brownClusFile.wasInvoked) {
+    if (opts.useBrown.value) {
       println("Reading brown cluster file " + opts.brownClusFile.value)
       for(line <- Source.fromFile(opts.brownClusFile.value).getLines()){
         val splitLine = line.split("\t")
