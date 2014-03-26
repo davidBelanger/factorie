@@ -25,6 +25,17 @@ class SparseAndDenseLinearMulticlassClassifier(labelSize: Int, sparseFeatureSize
 
 }
 
+
+class SparseAndDenseLinearMulticlassClassifierExample(model: SparseAndDenseLinearMulticlassClassifier,targetIntValue: Int,sparseFeatures: SparseBinaryTensor1, denseFeatures: DenseTensor1,lossAndGradient: optimize.OptimizableObjectives.Multiclass, weight: Double = 1.0) extends optimize.Example {
+  def accumulateValueAndGradient(value: DoubleAccumulator, gradient: WeightsMapAccumulator) {
+    val input = (sparseFeatures,denseFeatures)
+    val prediction = model.predict(input)
+    val (obj, ograd) = lossAndGradient.valueAndGradient(prediction, targetIntValue)
+    if (value != null) value.accumulate(obj * weight)
+    if (gradient != null) model.accumulateObjectiveGradient(gradient, input, ograd, weight)
+  }
+}
+
 class ForwardPosTaggerWithEmbeddings(embedding: WordEmbedding) extends GeneralForwardPosTagger2{
   // Different ways to load saved parameters
 //  def this(stream:InputStream) = { this(); deserialize(stream) }
@@ -212,5 +223,38 @@ object ForwardPosTrainerWithEmbeddingsTrainer extends HyperparameterMain {
     val acc = pos.accuracy(testDocs.flatMap(_.sentences))._1
     if(opts.targetAccuracy.wasInvoked) cc.factorie.assertMinimalAccuracy(acc,opts.targetAccuracy.value.toDouble)
     acc
+  }
+}
+
+
+object ForwardPosWithEmbeddingsOptimizer {
+  def main(args: Array[String]) {
+    val opts = new ForwardPosWithEmbeddingsOptions
+    opts.parse(args)
+    opts.saveModel.setValue(false)
+    val l1 = cc.factorie.util.HyperParameter(opts.l1, new cc.factorie.util.LogUniformDoubleSampler(1e-10, 1e2))
+    val l2 = cc.factorie.util.HyperParameter(opts.l2, new cc.factorie.util.LogUniformDoubleSampler(1e-10, 1e2))
+    val rate = cc.factorie.util.HyperParameter(opts.rate, new cc.factorie.util.LogUniformDoubleSampler(1e-4, 1e4))
+    val delta = cc.factorie.util.HyperParameter(opts.delta, new cc.factorie.util.LogUniformDoubleSampler(1e-4, 1e4))
+    val cutoff = cc.factorie.util.HyperParameter(opts.cutoff, new cc.factorie.util.SampleFromSeq(List(0,1,2,3)))
+    /*
+    val ssh = new cc.factorie.util.SSHActorExecutor("apassos",
+      Seq("avon1", "avon2"),
+      "/home/apassos/canvas/factorie-test",
+      "try-log/",
+      "cc.factorie.app.nlp.parse.DepParser2",
+      10, 5)
+      */
+    val qs = new cc.factorie.util.QSubExecutor(30, "cc.factorie.app.nlp.pos.ForwardPosTrainerWithEmbeddingsTrainer")
+    val optimizer = new cc.factorie.util.HyperParameterSearcher(opts, Seq(l1, l2, rate, delta, cutoff), qs.execute, 200, 180, 60)
+    val result = optimizer.optimize()
+    println("Got results: " + result.mkString(" "))
+    println("Best l1: " + opts.l1.value + " best l2: " + opts.l2.value)
+    opts.saveModel.setValue(true)
+    println("Running best configuration...")
+    import scala.concurrent.duration._
+    import scala.concurrent.Await
+    Await.result(qs.execute(opts.values.flatMap(_.unParse).toArray), 5.hours)
+    println("Done")
   }
 }
