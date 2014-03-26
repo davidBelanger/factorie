@@ -623,7 +623,9 @@ class TransitionBasedParserArgs extends cc.factorie.util.DefaultCmdOptions with 
   val wsj = new CmdOption("wsj", false, "BOOLEAN", "Whether data are in WSJ format or otherwise (Ontonotes or CoNLL)")
   val cutoff    = new CmdOption("cutoff", 0, "", "")
   val loadModel = new CmdOption("load", "", "", "")
-  val nThreads =  new CmdOption("nThreads", 1, "INT", "How many threads to use during training.")
+  val nTrainingThreads =  new CmdOption("num-training-threads", 1, "INT", "How many threads to use during training.")
+  val nFeatureThreads =  new CmdOption("num-feature-threads", 1, "INT", "How many threads to use during training.")
+
   val useSVM =    new CmdOption("use-svm", false, "BOOL", "Whether to use SVMs to train")
   val modelDir =  new CmdOption("model", "model", "FILENAME", "File in which to save the trained model.")
   val bootstrapping = new CmdOption("bootstrap", 0, "INT", "The number of bootstrapping iterations to do. 0 means no bootstrapping.")
@@ -690,16 +692,16 @@ object TransitionBasedParserTrainer extends cc.factorie.util.HyperparameterMain 
     val l1 = 2*opts.l1.value / sentences.length
     val l2 = 2*opts.l2.value / sentences.length
     val optimizer = new AdaGradRDA(opts.rate.value, opts.delta.value, l1, l2)
-    println(s"Initializing trainer (${opts.nThreads.value} threads)")
-    val trainer = if (opts.useSVM.value) new SVMMulticlassTrainer(opts.nThreads.value)
-      else new OnlineLinearMulticlassTrainer(optimizer=optimizer, useParallel=if (opts.nThreads.value > 1) true else false, nThreads=opts.nThreads.value, objective=OptimizableObjectives.hingeMulticlass, maxIterations=opts.maxIters.value)
+    println(s"Initializing trainer (${opts.nTrainingThreads.value} threads)")
+    val trainer = if (opts.useSVM.value) new SVMMulticlassTrainer(opts.nTrainingThreads.value)
+      else new OnlineLinearMulticlassTrainer(optimizer=optimizer, useParallel=if (opts.nTrainingThreads.value > 1) true else false, nThreads=opts.nTrainingThreads.value, objective=OptimizableObjectives.hingeMulticlass, maxIterations=opts.maxIters.value)
     def evaluate(cls: LinearMulticlassClassifier) {
       println(cls.weights.value.toSeq.count(x => x == 0).toFloat/cls.weights.value.length +" sparsity")
       testAll(c, "iteration ")
     }
     c.featuresDomain.dimensionDomain.gatherCounts = true
     println("Generating decisions...")
-    c.generateDecisions(sentences, c.ParserConstants.TRAINING, opts.nThreads.value)
+    c.generateDecisions(sentences, c.ParserConstants.TRAINING, opts.nTrainingThreads.value)
 
     println("Before pruning # features " + c.featuresDomain.dimensionDomain.size)
     c.featuresDomain.dimensionDomain.trimBelowCount(2*opts.cutoff.value)
@@ -708,7 +710,7 @@ object TransitionBasedParserTrainer extends cc.factorie.util.HyperparameterMain 
     println("After pruning # features " + c.featuresDomain.dimensionDomain.size)
     println("Training...")
 
-    var trainingVs = c.generateDecisions(sentences, c.ParserConstants.TRAINING, opts.nThreads.value)
+    var trainingVs = c.generateDecisions(sentences, c.ParserConstants.TRAINING, opts.nTrainingThreads.value)
 
     /* Print out features */
 //    sentences.take(5).foreach(s => {
@@ -730,7 +732,7 @@ object TransitionBasedParserTrainer extends cc.factorie.util.HyperparameterMain 
     trainingVs = null // GC the old training labels
     for (i <- 0 until numBootstrappingIterations) {
       println("Boosting iteration " + i)
-      c.boosting(sentences, nThreads=opts.nThreads.value, trainer=trainer, evaluate=evaluate)
+      c.boosting(sentences, nThreads=opts.nTrainingThreads.value, trainer=trainer, evaluate=evaluate)
     }
 
     testSentences.par.foreach(c.process)

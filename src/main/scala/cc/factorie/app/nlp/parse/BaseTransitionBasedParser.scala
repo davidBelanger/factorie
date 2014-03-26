@@ -86,35 +86,35 @@ class TransitionBasedParser2 extends BaseTransitionBasedParser {
     trainer.baseTrain(model, vs.map(_.target.intValue).toSeq, vs.map(_.features.value).toSeq, vs.map(v => 1.0).toSeq, evaluate)
   }
 
-  def train(trainSentences:Iterable[Sentence], testSentences:Iterable[Sentence], numBootstrappingIterations:Int = 2, l1Factor:Double = 0.00001, l2Factor:Double = 0.00001, nThreads: Int = 1)(implicit random: scala.util.Random): Unit = {
-    featuresDomain.dimensionDomain.gatherCounts = true
-    var trainingVars: Iterable[ParseDecisionVariable] = generateDecisions(trainSentences, ParserConstants.TRAINING, nThreads)
-    println("Before pruning # features " + featuresDomain.dimensionDomain.size)
-    println("TransitionBasedParser.train first 20 feature counts: "+featuresDomain.dimensionDomain.counts.toSeq.take(20))
-    featuresDomain.dimensionDomain.trimBelowCount(5) // Every feature is actually counted twice, so this removes features that were seen 2 times or less
-    featuresDomain.freeze()
-    println("After pruning # features " + featuresDomain.dimensionSize)
-    trainingVars = generateDecisions(trainSentences, ParserConstants.TRAINING, nThreads)
-
-    val numTrainSentences = trainSentences.size
-    val optimizer = new AdaGradRDA(1.0, 0.1, l1Factor / numTrainSentences, l2Factor / numTrainSentences)
-
-    trainDecisions(trainingVars, optimizer, trainSentences, testSentences)
-    trainingVars = null // Allow them to be GC'ed
-    for (i <- 0 until numBootstrappingIterations) {
-      println("Boosting iteration " + (i+1))
-      trainDecisions(generateDecisions(trainSentences, ParserConstants.BOOSTING, nThreads), optimizer, trainSentences, testSentences)
-    }
-  }
-
-  def trainDecisions(trainDecisions:Iterable[ParseDecisionVariable], optimizer:optimize.GradientOptimizer, trainSentences:Iterable[Sentence], testSentences:Iterable[Sentence])(implicit random: scala.util.Random): Unit = {
-    def evaluate(c: LinearMulticlassClassifier) {
-      println(model.weights.value.toSeq.count(_ == 0).toFloat/model.weights.value.length +" sparsity")
-      println(" TRAIN "+testString(trainSentences))
-      println(" TEST  "+testString(testSentences))
-    }
-    new OnlineLinearMulticlassTrainer(optimizer=optimizer, maxIterations=2).baseTrain(model, trainDecisions.map(_.target.intValue).toSeq, trainDecisions.map(_.features.value).toSeq, trainDecisions.map(v => 1.0).toSeq, evaluate=evaluate)
-  }
+//  def train(trainSentences:Iterable[Sentence], testSentences:Iterable[Sentence], numBootstrappingIterations:Int = 2, l1Factor:Double = 0.00001, l2Factor:Double = 0.00001, nThreads: Int = 1)(implicit random: scala.util.Random): Unit = {
+//    featuresDomain.dimensionDomain.gatherCounts = true
+//    var trainingVars: Iterable[ParseDecisionVariable] = generateDecisions(trainSentences, ParserConstants.TRAINING, nThreads)
+//    println("Before pruning # features " + featuresDomain.dimensionDomain.size)
+//    println("TransitionBasedParser.train first 20 feature counts: "+featuresDomain.dimensionDomain.counts.toSeq.take(20))
+//    featuresDomain.dimensionDomain.trimBelowCount(5) // Every feature is actually counted twice, so this removes features that were seen 2 times or less
+//    featuresDomain.freeze()
+//    println("After pruning # features " + featuresDomain.dimensionSize)
+//    trainingVars = generateDecisions(trainSentences, ParserConstants.TRAINING, nThreads)
+//
+//    val numTrainSentences = trainSentences.size
+//    val optimizer = new AdaGradRDA(1.0, 0.1, l1Factor / numTrainSentences, l2Factor / numTrainSentences)
+//
+//    trainDecisions(trainingVars, optimizer, trainSentences, testSentences)
+//    trainingVars = null // Allow them to be GC'ed
+//    for (i <- 0 until numBootstrappingIterations) {
+//      println("Boosting iteration " + (i+1))
+//      trainDecisions(generateDecisions(trainSentences, ParserConstants.BOOSTING, nThreads), optimizer, trainSentences, testSentences)
+//    }
+//  }
+//
+//  def trainDecisions(trainDecisions:Iterable[ParseDecisionVariable], optimizer:optimize.GradientOptimizer, trainSentences:Iterable[Sentence], testSentences:Iterable[Sentence])(implicit random: scala.util.Random): Unit = {
+//    def evaluate(c: LinearMulticlassClassifier) {
+//      println(model.weights.value.toSeq.count(_ == 0).toFloat/model.weights.value.length +" sparsity")
+//      println(" TRAIN "+testString(trainSentences))
+//      println(" TEST  "+testString(testSentences))
+//    }
+//    new OnlineLinearMulticlassTrainer(optimizer=optimizer, maxIterations=2).baseTrain(model, trainDecisions.map(_.target.intValue).toSeq, trainDecisions.map(_.features.value).toSeq, trainDecisions.map(v => 1.0).toSeq, evaluate=evaluate)
+//  }
 
   def boosting(ss: Iterable[Sentence], nThreads: Int, trainer: MulticlassClassifierTrainer[LinearMulticlassClassifier], evaluate: LinearMulticlassClassifier => Unit) =
     trainFromVariables(generateDecisions(ss, ParserConstants.BOOSTING, nThreads), trainer, evaluate)
@@ -699,16 +699,16 @@ object TransitionBasedParserTrainer2 extends cc.factorie.util.HyperparameterMain
     val l1 = 2*opts.l1.value / sentences.length
     val l2 = 2*opts.l2.value / sentences.length
     val optimizer = new AdaGradRDA(opts.rate.value, opts.delta.value, l1, l2)
-    println(s"Initializing trainer (${opts.nThreads.value} threads)")
-    val trainer = if (opts.useSVM.value) new SVMMulticlassTrainer(opts.nThreads.value)
-    else new OnlineLinearMulticlassTrainer(optimizer=optimizer, useParallel=if (opts.nThreads.value > 1) true else false, nThreads=opts.nThreads.value, objective=OptimizableObjectives.hingeMulticlass, maxIterations=opts.maxIters.value)
+    println(s"Initializing trainer (${opts.nTrainingThreads.value} threads)")
+    val trainer = if (opts.useSVM.value) new SVMMulticlassTrainer(opts.nTrainingThreads.value)
+    else new OnlineLinearMulticlassTrainer(optimizer=optimizer, useParallel=if (opts.nTrainingThreads.value > 1) true else false, nThreads=opts.nTrainingThreads.value, objective=OptimizableObjectives.hingeMulticlass, maxIterations=opts.maxIters.value)
     def evaluate(cls: LinearMulticlassClassifier) {
       println(cls.weights.value.toSeq.count(x => x == 0).toFloat/cls.weights.value.length +" sparsity")
       testAll(c, "iteration ")
     }
     c.featuresDomain.dimensionDomain.gatherCounts = true
     println("Generating decisions...")
-    c.generateDecisions(sentences, c.ParserConstants.TRAINING, opts.nThreads.value)
+    c.generateDecisions(sentences, c.ParserConstants.TRAINING, opts.nFeatureThreads.value)
 
     println("Before pruning # features " + c.featuresDomain.dimensionDomain.size)
     c.featuresDomain.dimensionDomain.trimBelowCount(2*opts.cutoff.value)
@@ -717,7 +717,7 @@ object TransitionBasedParserTrainer2 extends cc.factorie.util.HyperparameterMain
     println("After pruning # features " + c.featuresDomain.dimensionDomain.size)
     println("Training...")
 
-    var trainingVs = c.generateDecisions(sentences, c.ParserConstants.TRAINING, opts.nThreads.value)
+    var trainingVs = c.generateDecisions(sentences, c.ParserConstants.TRAINING, opts.nFeatureThreads.value)
 
     /* Print out features */
     //    sentences.take(5).foreach(s => {
@@ -739,7 +739,7 @@ object TransitionBasedParserTrainer2 extends cc.factorie.util.HyperparameterMain
     trainingVs = null // GC the old training labels
     for (i <- 0 until numBootstrappingIterations) {
       println("Boosting iteration " + i)
-      c.boosting(sentences, nThreads=opts.nThreads.value, trainer=trainer, evaluate=evaluate)
+      c.boosting(sentences, nThreads=opts.nTrainingThreads.value, trainer=trainer, evaluate=evaluate)
     }
 
     testSentences.par.foreach(c.process)

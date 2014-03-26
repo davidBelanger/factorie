@@ -12,13 +12,17 @@ import cc.factorie.model.{Parameters, DotTemplateWithStatistics2}
 import cc.factorie.app.nlp.embeddings.{WordEmbeddingOptions, WordEmbedding}
 
 
-class SparseAndDenseLinearMulticlassClassifier(labelSize: Int, sparseFeatureSize: Int, denseFeatureSize: Int) extends cc.factorie.app.classify.backend.MulticlassClassifier[(SparseBinaryTensor1,DenseTensor1)] with Parameters with OptimizablePredictor[Tensor1,(SparseBinaryTensor1,DenseTensor1)] {
+class SparseAndDenseLinearMulticlassClassifier[T1 <: Tensor1, T2 <: Tensor1](labelSize: Int, sparseFeatureSize: Int, denseFeatureSize: Int) extends cc.factorie.app.classify.backend.MulticlassClassifier[(T1,T2)] with Parameters with OptimizablePredictor[Tensor1,(T1,T2)] {
   val weightsForSparseFeatures = Weights(new DenseTensor2(sparseFeatureSize, labelSize))
   val weightsForDenseFeatures = Weights(new DenseTensor2(denseFeatureSize, labelSize))
 
 
-  def predict(features: (SparseBinaryTensor1,DenseTensor1)): Tensor1 = {val result = weightsForSparseFeatures.value.leftMultiply(features._1); result.+=(weightsForDenseFeatures.value.leftMultiply(features._2)); result}
-  def accumulateObjectiveGradient(accumulator: WeightsMapAccumulator, features: (SparseBinaryTensor1,DenseTensor1), gradient: Tensor1, weight: Double) = {
+  def predict(features: (T1,T2)): Tensor1 = {
+    val result = weightsForSparseFeatures.value.leftMultiply(features._1)
+    result.+=(weightsForDenseFeatures.value.leftMultiply(features._2))
+    result
+  }
+  def accumulateObjectiveGradient(accumulator: WeightsMapAccumulator, features: (T1,T2), gradient: Tensor1, weight: Double) = {
     accumulator.accumulate(weightsForSparseFeatures, features._1 outer gradient)
     accumulator.accumulate(weightsForDenseFeatures, features._2  outer gradient)
   }
@@ -26,15 +30,13 @@ class SparseAndDenseLinearMulticlassClassifier(labelSize: Int, sparseFeatureSize
 }
 
 
-class SparseAndDenseLinearMulticlassClassifierExample(model: SparseAndDenseLinearMulticlassClassifier,targetIntValue: Int,sparseFeatures: SparseBinaryTensor1, denseFeatures: DenseTensor1,lossAndGradient: optimize.OptimizableObjectives.Multiclass, weight: Double = 1.0) extends optimize.Example {
-  def accumulateValueAndGradient(value: DoubleAccumulator, gradient: WeightsMapAccumulator) {
-    val input = (sparseFeatures,denseFeatures)
-    val prediction = model.predict(input)
-    val (obj, ograd) = lossAndGradient.valueAndGradient(prediction, targetIntValue)
-    if (value != null) value.accumulate(obj * weight)
-    if (gradient != null) model.accumulateObjectiveGradient(gradient, input, ograd, weight)
-  }
-}
+//class SparseAndDenseLinearMulticlassClassifierExample[T1 <: Tensor1, T2 <: Tensor1](model: SparseAndDenseLinearMulticlassClassifier[T1,T2],targetIntValue: Int,sparseFeatures: T1, denseFeatures: T2,lossAndGradient: optimize.OptimizableObjectives.Multiclass, weight: Double = 1.0) extends optimize.Example {
+//
+//  def accumulateValueAndGradient(value: DoubleAccumulator, gradient: WeightsMapAccumulator) {
+//    val input = (sparseFeatures,denseFeatures)
+//    new optimize.PredictorExample(model, input, targetIntValue, lossAndGradient, 1.0).accumulateValueAndGradient(value, gradient)
+//  }
+//}
 
 class ForwardPosTaggerWithEmbeddings(embedding: WordEmbedding) extends GeneralForwardPosTagger2{
   // Different ways to load saved parameters
@@ -60,7 +62,7 @@ class ForwardPosTaggerWithEmbeddings(embedding: WordEmbedding) extends GeneralFo
     }
 
   }
-  lazy val model = new SparseAndDenseLinearMulticlassClassifier(PennPosDomain.size, FeatureDomain.dimensionSize,denseFeatureDomainSize)
+  lazy val model = new SparseAndDenseLinearMulticlassClassifier[SparseBinaryTensor1,DenseTensor1](PennPosDomain.size, FeatureDomain.dimensionSize,denseFeatureDomainSize)
 
   def getFeatures(token: Token, index: Int, lemmaStrings: Lemmas): (SparseBinaryTensor1,DenseTensor1) = {
     val sparseFeatures = features(token, index, lemmaStrings)
@@ -73,7 +75,7 @@ class ForwardPosTaggerWithEmbeddings(embedding: WordEmbedding) extends GeneralFo
   }
 
 
-  class SentenceClassifierExample(val tokens:Seq[Token], model:SparseAndDenseLinearMulticlassClassifier, lossAndGradient: optimize.OptimizableObjectives.Multiclass) extends optimize.Example {
+  class SentenceClassifierExample(val tokens:Seq[Token], model:SparseAndDenseLinearMulticlassClassifier[SparseBinaryTensor1,DenseTensor1], lossAndGradient: optimize.OptimizableObjectives.Multiclass) extends optimize.Example {
     def accumulateValueAndGradient(value: DoubleAccumulator, gradient: WeightsMapAccumulator) {
       val lemmaStrings = lemmas(tokens)
       for (index <- 0 until tokens.length) {
@@ -111,7 +113,7 @@ class ForwardPosTaggerWithEmbeddings(embedding: WordEmbedding) extends GeneralFo
       exampleSetsToPrediction = doBootstrap
       printAccuracy(trainSentences, "Training: ")
       printAccuracy(testSentences, "Testing: ")
-      val sparsity = model.weightsForDenseFeatures.value.toSeq.count(_ == 0).toFloat/ model.weightsForDenseFeatures.value.length
+      val sparsity = model.weightsForSparseFeatures.value.toSeq.count(_ == 0).toFloat/ model.weightsForSparseFeatures.value.length
       println("Sparsity: " + sparsity)
     }
     val examples = trainSentences.shuffle.par.map(sentence =>
