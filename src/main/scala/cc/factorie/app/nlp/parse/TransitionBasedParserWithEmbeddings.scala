@@ -67,8 +67,9 @@ class TransitionBasedParserWithEmbeddings(embedding: WordEmbedding) extends Base
       new PredictorExample(model, features, v.target.intValue, objective, 1.0)
     })
 
+    val rand = new scala.util.Random(0)
     (0 until 3).foreach(_ => {
-      trainer.trainFromExamples(examples)
+      trainer.trainFromExamples(examples.shuffle(rand))
       evaluate(model)
     })
   }
