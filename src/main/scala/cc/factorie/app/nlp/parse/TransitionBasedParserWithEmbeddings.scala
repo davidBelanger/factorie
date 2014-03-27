@@ -3,13 +3,9 @@ package cc.factorie.app.nlp.parse
 import cc.factorie.app.nlp._
 import cc.factorie._
 import embeddings.{WordEmbeddingOptions, WordEmbedding}
-import model.WeightsSet
-import pos.{LabeledPennPosTag, SparseAndDenseLinearMulticlassClassifier, PennPosTag}
+import pos.{SparseAndDenseBilinearMulticlassClassifier, LabeledPennPosTag, SparseAndDenseLinearMulticlassClassifier, PennPosTag}
 import cc.factorie.app.nlp.parse
-import parse.WSJTransitionBasedParser
 import scala.collection.mutable.{HashMap, ArrayBuffer}
-import scala.util.parsing.json.JSON
-import scala.annotation.tailrec
 import java.io._
 import cc.factorie.util._
 import scala._
@@ -24,8 +20,11 @@ import cc.factorie.DenseTensor1
 
 
 class TransitionBasedParserWithEmbeddings(embedding: WordEmbedding) extends BaseTransitionBasedParser {
-//  def this(stream:InputStream) = { this(); deserialize(stream) }
-//  def this(file: File) = this(new FileInputStream(file))
+  //def this(stream:InputStream) = { this(); deserialize(stream) }
+//  def this(embeddingFile: File, modelFile: File) = {
+//
+//    this(new FileInputStream(file))
+//  }
 //  def this(url:java.net.URL) = {
 //    this()
 //    val stream = url.openConnection.getInputStream
@@ -34,10 +33,29 @@ class TransitionBasedParserWithEmbeddings(embedding: WordEmbedding) extends Base
 //    deserialize(stream)
 //  }
   def serialize(stream: java.io.OutputStream): Unit = {
-
+    import cc.factorie.util.CubbieConversions._
+    // Sparsify the evidence weights
+    import scala.language.reflectiveCalls
+    val sparseEvidenceWeights = new la.DenseLayeredTensor2(featuresDomain.dimensionDomain.size, labelDomain.size, new la.SparseIndexedTensor1(_))
+    model.weightsForSparseFeatures.value.foreachElement((i, v) => if (v != 0.0) sparseEvidenceWeights += (i, v))
+    model.weightsForSparseFeatures.set(sparseEvidenceWeights)
+    val dstream = new java.io.DataOutputStream(new BufferedOutputStream(stream))
+    BinarySerializer.serialize(featuresDomain.dimensionDomain, dstream)
+    BinarySerializer.serialize(labelDomain, dstream)
+    BinarySerializer.serialize(model, dstream)
+    dstream.close()  // TODO Are we really supposed to close here, or is that the responsibility of the caller?
   }
   def deserialize(stream: java.io.InputStream): Unit = {
-
+    import cc.factorie.util.CubbieConversions._
+    // Get ready to read sparse evidence weights
+    val dstream = new java.io.DataInputStream(new BufferedInputStream(stream))
+    BinarySerializer.deserialize(featuresDomain.dimensionDomain, dstream)
+    BinarySerializer.deserialize(labelDomain, dstream)
+    import scala.language.reflectiveCalls
+    model.weightsForSparseFeatures.set(new la.DenseLayeredTensor2(featuresDomain.dimensionDomain.size, labelDomain.size, new la.SparseIndexedTensor1(_)))
+    BinarySerializer.deserialize(model, dstream)
+    println("TransitionBasedParser model parameters oneNorm "+model.parameters.oneNorm)
+    dstream.close()  // TODO Are we really supposed to close here, or is that the responsibility of the caller?
   }
 
   val denseFeatureDomainSize = if (embedding == null) 1 else embedding.dimensionSize
@@ -53,17 +71,23 @@ class TransitionBasedParserWithEmbeddings(embedding: WordEmbedding) extends Base
     }
 
   }
-  lazy val model = new SparseAndDenseLinearMulticlassClassifier[GrowableSparseBinaryTensor1,DenseTensor1](labelDomain.size, featuresDomain.dimensionSize,denseFeatureDomainSize)
-  def getFeatures(v: ParseDecisionVariable): (GrowableSparseBinaryTensor1,DenseTensor1) =  {
+  def getFeatures2(v: ParseDecisionVariable): (GrowableSparseBinaryTensor1,DenseTensor1) =  {
     val denseFeatures =  getDenseFeatures(v)
     (v.features.value.asInstanceOf[GrowableSparseBinaryTensor1],denseFeatures)
   }
-  def classify(v: ParseDecisionVariable) = getParseDecision(labelDomain.category(model.classification(getFeatures(v)).bestLabelIndex))
+  def getFeatures3(v: ParseDecisionVariable): (GrowableSparseBinaryTensor1,DenseTensor1,DenseTensor1) =  {
+    val denseFeatures =  getDenseFeatures2(v)
+    (v.features.value.asInstanceOf[GrowableSparseBinaryTensor1],denseFeatures._1,denseFeatures._2)
+  }
   def getDenseFeatures(v: ParseDecisionVariable): DenseTensor1 = getEmbedding(v.state.stackToken(0).form)
+  def getDenseFeatures2(v: ParseDecisionVariable): (DenseTensor1,DenseTensor1) = (getEmbedding(v.state.inputToken(0).form),getEmbedding(v.state.stackToken(0).form))
 
-  def trainFromVariables(vs: Iterable[ParseDecisionVariable], trainer: Trainer, objective: OptimizableObjectives.Multiclass,evaluate: (SparseAndDenseLinearMulticlassClassifier[_,_]) => Unit) {
+
+  lazy val model = new SparseAndDenseBilinearMulticlassClassifier[GrowableSparseBinaryTensor1,DenseTensor1,DenseTensor1](labelDomain.size, featuresDomain.dimensionSize,denseFeatureDomainSize)
+  def classify(v: ParseDecisionVariable) = getParseDecision(labelDomain.category(model.classification(getFeatures3(v)).bestLabelIndex))
+  def trainFromVariables(vs: Iterable[ParseDecisionVariable], trainer: Trainer, objective: OptimizableObjectives.Multiclass,evaluate: (SparseAndDenseBilinearMulticlassClassifier[_,_,_]) => Unit) {
     val examples = vs.map(v => {
-      val features = (v.features.value.asInstanceOf[GrowableSparseBinaryTensor1],getDenseFeatures(v))
+      val features = getFeatures3(v)
       new PredictorExample(model, features, v.target.intValue, objective, 1.0)
     })
 
@@ -74,9 +98,28 @@ class TransitionBasedParserWithEmbeddings(embedding: WordEmbedding) extends Base
     })
   }
 
-
-  def boosting(ss: Iterable[Sentence], nThreads: Int, trainer: Trainer, objective: OptimizableObjectives.Multiclass,evaluate: SparseAndDenseLinearMulticlassClassifier[_,_] => Unit) =
+  def boosting(ss: Iterable[Sentence], nThreads: Int, trainer: Trainer, objective: OptimizableObjectives.Multiclass,evaluate: SparseAndDenseBilinearMulticlassClassifier[_,_,_] => Unit) =
     trainFromVariables(generateDecisions(ss, ParserConstants.BOOSTING, nThreads), trainer, objective,evaluate)
+
+  //lazy val model = new SparseAndDenseLinearMulticlassClassifier[GrowableSparseBinaryTensor1,DenseTensor1](labelDomain.size, featuresDomain.dimensionSize,denseFeatureDomainSize)
+  //  def classify(v: ParseDecisionVariable) = getParseDecision(labelDomain.category(model.classification(getFeatures2(v)).bestLabelIndex))
+//  def trainFromVariables(vs: Iterable[ParseDecisionVariable], trainer: Trainer, objective: OptimizableObjectives.Multiclass,evaluate: (SparseAndDenseLinearMulticlassClassifier[_,_]) => Unit) {
+//    val examples = vs.map(v => {
+//      val features = getFeatures2(v)
+//      new PredictorExample(model, features, v.target.intValue, objective, 1.0)
+//    })
+//
+//    val rand = new scala.util.Random(0)
+//    (0 until 3).foreach(_ => {
+//      trainer.trainFromExamples(examples.shuffle(rand))
+//      evaluate(model)
+//    })
+//  }
+//  def boosting(ss: Iterable[Sentence], nThreads: Int, trainer: Trainer, objective: OptimizableObjectives.Multiclass,evaluate: SparseAndDenseLinearMulticlassClassifier[_,_] => Unit) =
+//    trainFromVariables(generateDecisions(ss, ParserConstants.BOOSTING, nThreads), trainer, objective,evaluate)
+
+
+
 }
 
 
@@ -145,14 +188,16 @@ object TransitionBasedParserWithEmbeddingsTrainer extends cc.factorie.util.Hyper
     println(s"Initializing trainer (${opts.nTrainingThreads.value} threads)")
 
 
-    def evaluate(cls: SparseAndDenseLinearMulticlassClassifier[_,_]) {
+    def evaluate(cls: SparseAndDenseBilinearMulticlassClassifier[_,_,_]) {
       println(cls.weightsForSparseFeatures.value.toSeq.count(x => x == 0).toFloat/cls.weightsForSparseFeatures.value.length +" sparsity")
       testAll(c, "iteration ")
     }
-//def evaluate(cls: LinearMulticlassClassifier) {
-//  println(cls.weights.value.toSeq.count(x => x == 0).toFloat/cls.weights.value.length +" sparsity")
-//  testAll(c, "iteration ")
-//}
+
+//    def evaluate(cls: SparseAndDenseLinearMulticlassClassifier[_,_]) {
+//      println(cls.weightsForSparseFeatures.value.toSeq.count(x => x == 0).toFloat/cls.weightsForSparseFeatures.value.length +" sparsity")
+//      testAll(c, "iteration ")
+//    }
+
     c.featuresDomain.dimensionDomain.gatherCounts = true
     println("Generating decisions...")
     c.generateDecisions(sentences, c.ParserConstants.TRAINING, opts.nFeatureThreads.value)
@@ -169,7 +214,7 @@ object TransitionBasedParserWithEmbeddingsTrainer extends cc.factorie.util.Hyper
 
     println("Training...")
 
-    val trainer = new OnlineTrainer(c.model.parameters,optimizer)
+    val trainer = new OnlineTrainer(c.model.parameters,optimizer,maxIterations = opts.maxIters.value)
     c.trainFromVariables(trainingVs, trainer, objective, evaluate)
 
 //    val trainer =  new OnlineLinearMulticlassTrainer(optimizer=optimizer, useParallel=if (opts.nTrainingThreads.value > 1) true else false, nThreads=opts.nTrainingThreads.value, objective=OptimizableObjectives.hingeMulticlass, maxIterations=opts.maxIters.value)
@@ -185,13 +230,13 @@ object TransitionBasedParserWithEmbeddingsTrainer extends cc.factorie.util.Hyper
     //testSentences.foreach(c.process)
 
     testSingle(c, testSentences, "")
-//    if (opts.saveModel.value) {
-//      val modelUrl: String = if (opts.modelDir.wasInvoked) opts.modelDir.value else opts.modelDir.defaultValue + System.currentTimeMillis().toString + ".factorie"
-//      c.serialize(new java.io.File(modelUrl))
-//      val d = new TransitionBasedParserWithEmbeddings(embedding)
-//      d.deserialize(new java.io.File(modelUrl))
-//      testSingle(d, testSentences, "Post serialization accuracy ")
-//    }
+    if (opts.saveModel.value) {
+      val modelUrl: String = if (opts.modelDir.wasInvoked) opts.modelDir.value else opts.modelDir.defaultValue + System.currentTimeMillis().toString + ".factorie"
+      c.serialize(new java.io.File(modelUrl))
+      val d = new TransitionBasedParserWithEmbeddings(embedding)
+      d.deserialize(new java.io.File(modelUrl))
+      testSingle(d, testSentences, "Post serialization accuracy ")
+    }
     val testLAS = ParserEval.calcLas(testSentences.map(_.attr[ParseTree]))
     if(opts.targetAccuracy.wasInvoked) cc.factorie.assertMinimalAccuracy(testLAS,opts.targetAccuracy.value.toDouble)
 
@@ -199,6 +244,41 @@ object TransitionBasedParserWithEmbeddingsTrainer extends cc.factorie.util.Hyper
   }
 }
 
+
+object TransitionBasedParserWithEmbeddingsTester {
+  def main(args: Array[String]) {
+    val opts = new TransitionBasedParserWithEmbeddingsArgs
+    opts.parse(args)
+    assert(opts.testDir.wasInvoked || opts.testFiles.wasInvoked)
+
+    // load model from file if given,
+    // else if the wsj command line param was specified use wsj model,
+    // otherwise ontonotes model
+    val parser = {
+      val useEmbeddings = opts.useEmbeddings.value
+      if(useEmbeddings) println("using embeddings") else println("not using embeddings")
+      val embedding = if(useEmbeddings)  new WordEmbedding(() => new FileInputStream(opts.embeddingFile.value),opts.embeddingDim.value,opts.numEmbeddingsToTake.value) else null
+      val parser = new TransitionBasedParserWithEmbeddings(embedding)
+      parser.deserialize(new File(opts.modelDir.value))
+      parser
+    }
+
+    assert(!(opts.testDir.wasInvoked && opts.testFiles.wasInvoked))
+    val testFileList = if(opts.testDir.wasInvoked) FileUtils.getFileListFromDir(opts.testDir.value) else opts.testFiles.value.toSeq
+
+    val testPortionToTake =  if(opts.testPortion.wasInvoked) opts.testPortion.value else 1.0
+    val testDocs =  testFileList.map(fname => {
+      if(opts.wsj.value)
+        load.LoadWSJMalt.fromFilename(fname, loadLemma=load.AnnotationTypes.AUTO, loadPos=load.AnnotationTypes.AUTO).head
+      else
+        load.LoadOntonotes5.fromFilename(fname, loadLemma=load.AnnotationTypes.AUTO, loadPos=load.AnnotationTypes.AUTO).head
+    })
+    val testSentencesFull = testDocs.flatMap(_.sentences)
+    val testSentences = testSentencesFull.take((testPortionToTake*testSentencesFull.length).floor.toInt)
+
+    println(parser.testString(testSentences))
+  }
+}
 
 
 object TransitionBasedParserWithEmbeddingsOptimizer {

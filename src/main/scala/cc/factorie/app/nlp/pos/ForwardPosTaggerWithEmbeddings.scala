@@ -16,7 +16,6 @@ class SparseAndDenseLinearMulticlassClassifier[T1 <: Tensor1, T2 <: Tensor1](lab
   val weightsForSparseFeatures = Weights(new DenseTensor2(sparseFeatureSize, labelSize))
   val weightsForDenseFeatures = Weights(new DenseTensor2(denseFeatureSize, labelSize))
 
-
   def predict(features: (T1,T2)): Tensor1 = {
     val result = weightsForSparseFeatures.value.leftMultiply(features._1)
     result.+=(weightsForDenseFeatures.value.leftMultiply(features._2))
@@ -26,17 +25,40 @@ class SparseAndDenseLinearMulticlassClassifier[T1 <: Tensor1, T2 <: Tensor1](lab
     accumulator.accumulate(weightsForSparseFeatures, features._1 outer gradient)
     accumulator.accumulate(weightsForDenseFeatures, features._2  outer gradient)
   }
+}
+
+class SparseAndDenseBilinearMulticlassClassifier[T1 <: Tensor1, T2 <: Tensor1,T3 <: Tensor1](labelSize: Int, sparseFeatureSize: Int, denseFeatureSize: Int) extends cc.factorie.app.classify.backend.MulticlassClassifier[(T1,T2,T3)] with Parameters with OptimizablePredictor[Tensor1,(T1,T2,T3)] {
+  val weightsForSparseFeatures = Weights(new DenseTensor2(sparseFeatureSize, labelSize))
+  val weightsForDenseFeatures1 = Weights(new DenseTensor2(denseFeatureSize, labelSize))
+  val weightsForDenseFeatures2 = Weights(new DenseTensor2(denseFeatureSize, labelSize))
+  val bilinearWeights = (0 until labelSize).map(i => Weights(new DenseTensor2(denseFeatureSize, denseFeatureSize)))
+
+  def predict(features: (T1,T2,T3)): Tensor1 = {
+    val result = weightsForSparseFeatures.value.leftMultiply(features._1)
+    result.+=(weightsForDenseFeatures1.value.leftMultiply(features._2))
+    result.+=(weightsForDenseFeatures2.value.leftMultiply(features._3))
+
+    (0 until labelSize).foreach(i => {
+      val quadForm = bilinearWeights(i).value.leftMultiply(features._2).dot(features._3)
+      result.+=(i,quadForm)
+    })
+    result
+  }
+  def accumulateObjectiveGradient(accumulator: WeightsMapAccumulator, features: (T1,T2,T3), gradient: Tensor1, weight: Double) = {
+    accumulator.accumulate(weightsForSparseFeatures, features._1 outer gradient)
+    accumulator.accumulate(weightsForDenseFeatures1, features._2  outer gradient)
+    accumulator.accumulate(weightsForDenseFeatures2, features._3  outer gradient)
+    (0 until labelSize).foreach(i => {
+      accumulator.accumulate(bilinearWeights(i), (features._2  outer features._3) * gradient(i))
+    })
+
+  }
+
 
 }
 
 
-//class SparseAndDenseLinearMulticlassClassifierExample[T1 <: Tensor1, T2 <: Tensor1](model: SparseAndDenseLinearMulticlassClassifier[T1,T2],targetIntValue: Int,sparseFeatures: T1, denseFeatures: T2,lossAndGradient: optimize.OptimizableObjectives.Multiclass, weight: Double = 1.0) extends optimize.Example {
-//
-//  def accumulateValueAndGradient(value: DoubleAccumulator, gradient: WeightsMapAccumulator) {
-//    val input = (sparseFeatures,denseFeatures)
-//    new optimize.PredictorExample(model, input, targetIntValue, lossAndGradient, 1.0).accumulateValueAndGradient(value, gradient)
-//  }
-//}
+
 
 class ForwardPosTaggerWithEmbeddings(embedding: WordEmbedding) extends GeneralForwardPosTagger2{
   // Different ways to load saved parameters
