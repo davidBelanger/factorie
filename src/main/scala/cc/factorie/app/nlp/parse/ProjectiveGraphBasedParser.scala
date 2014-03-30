@@ -279,8 +279,8 @@ class ProjectiveGraphBasedParser extends DocumentAnnotator {
       trainer.processExamples(rng.shuffle(examples))
       opt match { case op: ParameterAveraging => op.setWeightsToAverage(DependencyModel.parameters) }
       val t0 = System.currentTimeMillis()
-      println("Predicting train set..."); Threading.parForeach(trainSentences, nThreads) { s => parse(s) } // Was par
-      println("Predicting test set...");  Threading.parForeach(testSentences, nThreads) { s => parse(s) } // Was par
+      println("Predicting train set..."); Threading.parForeach(trainSentences, nThreads) { s => parse(s) }
+      println("Predicting test set...");  Threading.parForeach(testSentences, nThreads) { s => parse(s) }
       println("Processed in " + (trainSentences.map(_.tokens.length).sum+testSentences.map(_.tokens.length).sum)*1000.0/(System.currentTimeMillis()-t0) + " tokens per second")
       println("Training UAS = "+ ParserEval.calcUas(trainSentences.map(_.attr[ParseTree])))
       println(" Testing UAS = "+ ParserEval.calcUas(testSentences.map(_.attr[ParseTree])))
@@ -350,7 +350,7 @@ object ProjectiveGraphBasedParserTrainer extends HyperparameterMain {
       var fileList = Seq.empty[String]
       if (fileOpt.wasInvoked) fileList = Seq(fileOpt.value)
       if (dirOpt.wasInvoked) fileList ++= FileUtils.getFileListFromDir(dirOpt.value, fileExt)
-      fileList.flatMap(fname => (if (opts.ontonotes.value) load.LoadOntonotes5.fromFilename(fname) else load.LoadConll2008.fromFilename(fname)).head.sentences.toSeq)
+      fileList.flatMap(fname => (if (opts.ontonotes.value) load.LoadOntonotes5.fromFilename(fname).flatMap(_.sentences) else load.LoadWSJMalt.fromFilename(fname, loadLemma=load.AnnotationTypes.AUTO, loadPos=load.AnnotationTypes.AUTO).head.sentences.toSeq))
     }
 
     val trainSentencesFull = loadSentences(opts.trainFile, opts.trainDir)

@@ -3,9 +3,7 @@ package cc.factorie.app.nlp.parse
 import cc.factorie.app.nlp._
 import cc.factorie._
 import embeddings.{WordEmbeddingOptions, WordEmbedding}
-import pos.{SparseAndDenseBilinearMulticlassClassifier, LabeledPennPosTag, SparseAndDenseLinearMulticlassClassifier, PennPosTag}
-import cc.factorie.app.nlp.parse
-import scala.collection.mutable.{HashMap, ArrayBuffer}
+import pos.{SparseAndDenseBilinearMulticlassClassifier}
 import java.io._
 import cc.factorie.util._
 import scala._
@@ -15,7 +13,7 @@ import cc.factorie.app.nlp.Sentence
 import cc.factorie.optimize.AdaGradRDA
 import cc.factorie.app.nlp.load
 import cc.factorie.optimize.OptimizableObjectives
-import cc.factorie.la.{GrowableSparseBinaryTensor1, WeightsMapAccumulator, SparseBinaryTensor1, DenseTensor1}
+import cc.factorie.la.{GrowableSparseBinaryTensor1}
 import cc.factorie.DenseTensor1
 
 
