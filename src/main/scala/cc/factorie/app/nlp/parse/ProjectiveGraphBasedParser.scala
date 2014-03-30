@@ -90,7 +90,18 @@ class ProjectiveGraphBasedParser extends DocumentAnnotator {
       addFourGramFeature(f, dir+"PhHPcC=", prevHeadPos, pPos, prevTokPos, tPos)
       addFourGramFeature(f, dir+"HNhCNc=", pPos, nextHeadPos, tPos, nextTokPos)
       addFourGramFeature(f, dir+"PhHCNc=", prevHeadPos, pPos, tPos, nextTokPos)
+
+
       val distance = math.abs(t.positionInSentence - p.positionInSentence)
+//      val attachDirection = if(t.positionInSentence  > p.positionInSentence) "RA" else "LA"
+//      val distBool =
+//      if (distance > 10) "10"
+//      else if (distance > 5) "5"
+//      else (distance - 1).toString
+//      val attDist: String = "&" + attachDirection + "&" + distBool
+
+
+
       for (i <- 0 to distance) {
         f += dir+"EdgeLength>="+i
       }
@@ -101,12 +112,15 @@ class ProjectiveGraphBasedParser extends DocumentAnnotator {
     }
     f
   }
-
+  def getJointFeatureVector(childToken: Token ,parentToken: Token): Seq[TensorVar] = {
+    Seq(getTokenFeatureVector(childToken), getParentFeatureVector(parentToken), getPairwiseFeatureVector(childToken, parentToken))
+  }
   def groundTruthEdges(s: Sentence): Seq[TensorVar] = {
     s.attr[ParseTree]._targetParents.zipWithIndex.flatMap(i => {
       val parentToken = if (i._1 < 0) null else s.tokens(i._1)
       val childToken = s.tokens(i._2)
-      Seq(getTokenFeatureVector(childToken), getParentFeatureVector(parentToken), getPairwiseFeatureVector(childToken, parentToken))
+      getJointFeatureVector(childToken,parentToken)
+      //Seq(getTokenFeatureVector(childToken), getParentFeatureVector(parentToken), getPairwiseFeatureVector(childToken, parentToken))
     })
   }
   object DependencyModel extends Parameters {
@@ -118,21 +132,24 @@ class ProjectiveGraphBasedParser extends DocumentAnnotator {
     val sentLength = sent.length
     (0 until sentLength).foreach(e => knownParents.append(-3))
     negativeExamples.foreach(e => knownParents(e._2) = e._1)
-    val tokenScores = Array.fill(sent.length+1)(0.0)
-    val parentScores = Array.fill(sent.length+1)(0.0)
-    parentScores(0) = weights.dot(getParentFeatureVector(null).value)
-    for (i <- 0 until sentLength) {
-      tokenScores(i+1) = weights.dot(getTokenFeatureVector(sent.tokens(i)).value)
-      parentScores(i+1) = weights.dot(getParentFeatureVector(sent.tokens(i)).value)
-    }
+//    val tokenScores = Array.fill(sent.length+1)(0.0)
+//    val parentScores = Array.fill(sent.length+1)(0.0)
+//    parentScores(0) = weights.dot(getParentFeatureVector(null).value)
+//    for (i <- 0 until sentLength) {
+//      tokenScores(i+1) = weights.dot(getTokenFeatureVector(sent.tokens(i)).value)
+//      parentScores(i+1) = weights.dot(getParentFeatureVector(sent.tokens(i)).value)
+//    }
     val edgeScores = Array.fill(sent.length+1,sent.length+1)(Double.NaN)
     def getEdgeScore(parent: Int, child: Int) : Double = {
       assert(parent != child, "can't add an edge from a token to itself")
       if (edgeScores(parent)(child).isNaN) {
         val loss = if ((child > 0) && (knownParents(child-1) == parent -1)) -1.0 else 0.0
-        edgeScores(parent)(child) = if (child > 0)
-          loss + weights.dot(getPairwiseFeatureVector(sent.tokens(child - 1), if (parent > 0) sent.tokens(parent - 1) else null).value) + tokenScores(child) + parentScores(parent)
-        else 0
+        edgeScores(parent)(child) = if (child > 0){
+            val featureVectors = getJointFeatureVector(sent.tokens(child - 1), if (parent > 0) sent.tokens(parent - 1) else null)
+            loss + featureVectors.map(fv => weights.dot(fv.value)).sum
+//          loss + weights.dot(getPairwiseFeatureVector(sent.tokens(child - 1), if (parent > 0) sent.tokens(parent - 1) else null).value) + tokenScores(child) + parentScores(parent)
+        }
+        else 0 //todo: is this sufficient to ensure that the root isn't the child of anything?
       }
       edgeScores(parent)(child)
     }
@@ -244,15 +261,19 @@ class ProjectiveGraphBasedParser extends DocumentAnnotator {
           sent.attr[ParseTree].targetParents.zipWithIndex)
         val (parents, score) = projectiveParser.parse()
         for (i <- 0 until sent.tokens.length) {
-          gradient.accumulate(DependencyModel.weights,
-            getPairwiseFeatureVector(sent.tokens(i), if (parents(i) == -1) null else sent.tokens(parents(i))).value,
-            -1.0)
-          gradient.accumulate(DependencyModel.weights,
-            getTokenFeatureVector(sent.tokens(i)).value,
-            -1.0)
-          gradient.accumulate(DependencyModel.weights,
-            getParentFeatureVector(if (parents(i) == -1) null else sent.tokens(parents(i))).value,
-            -1.0)
+          val child = i
+          val parent = parents(i)
+          val featureVectors = getJointFeatureVector(if(child > 0) sent.tokens(child - 1) else null, if (parent > 0) sent.tokens(parent - 1) else null)
+          featureVectors.foreach(fv => gradient.accumulate(DependencyModel.weights,fv.value,-1.0))
+//          gradient.accumulate(DependencyModel.weights,
+//            getPairwiseFeatureVector(sent.tokens(i), if (parents(i) == -1) null else sent.tokens(parents(i))).value,
+//            -1.0)
+//          gradient.accumulate(DependencyModel.weights,
+//            getTokenFeatureVector(sent.tokens(i)).value,
+//            -1.0)
+//          gradient.accumulate(DependencyModel.weights,
+//            getParentFeatureVector(if (parents(i) == -1) null else sent.tokens(parents(i))).value,
+//            -1.0)
           if (value ne null) {
             val trueParent = sent.attr[ParseTree].parents(i)
             val returned = parents(i)
