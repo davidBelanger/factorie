@@ -11,6 +11,26 @@ import cc.factorie.variable.{TensorVar, LabeledMutableDiscreteVar}
 import cc.factorie.model.{Parameters, DotTemplateWithStatistics2}
 import cc.factorie.app.nlp.embeddings.{WordEmbeddingOptions, WordEmbedding}
 
+//this assumes that the dense vector is of length the number of classes and that class's weight vector for multiclass classification just appends this one-dimensional dense feature
+class SparseAndDenseClassConditionalLinearMulticlassClassifier[T1 <: Tensor1, T2 <: Tensor1](labelSize: Int, sparseFeatureSize: Int) extends cc.factorie.app.classify.backend.MulticlassClassifier[(T1,T2)] with Parameters with OptimizablePredictor[Tensor1,(T1,T2)] {
+  val weightsForSparseFeatures = Weights(new DenseTensor2(sparseFeatureSize, labelSize))
+  val weightsForDenseFeatures =  (0 until labelSize).map(i => Weights(new DenseTensor1(1)))
+
+  def predict(features: (T1,T2)): Tensor1 = {
+    val result = weightsForSparseFeatures.value.leftMultiply(features._1)
+    (0 until labelSize).foreach(i => {
+            val term = weightsForDenseFeatures(i).value(0) * features._2(i)
+            result.+=(i,term)
+          })
+    result
+  }
+  def accumulateObjectiveGradient(accumulator: WeightsMapAccumulator, features: (T1,T2), gradient: Tensor1, weight: Double) = {
+    accumulator.accumulate(weightsForSparseFeatures, features._1 outer gradient)
+    (0 until labelSize).foreach(i => {
+      accumulator.accumulate(weightsForDenseFeatures(i), new DenseTensor1(1,features._2(i) * gradient(i)))
+    })
+  }
+}
 
 class SparseAndDenseLinearMulticlassClassifier[T1 <: Tensor1, T2 <: Tensor1](labelSize: Int, sparseFeatureSize: Int, denseFeatureSize: Int) extends cc.factorie.app.classify.backend.MulticlassClassifier[(T1,T2)] with Parameters with OptimizablePredictor[Tensor1,(T1,T2)] {
   val weightsForSparseFeatures = Weights(new DenseTensor2(sparseFeatureSize, labelSize))
@@ -27,37 +47,33 @@ class SparseAndDenseLinearMulticlassClassifier[T1 <: Tensor1, T2 <: Tensor1](lab
   }
 }
 
-class SparseAndDenseBilinearMulticlassClassifier[T1 <: Tensor1, T2 <: Tensor1,T3 <: Tensor1](labelSize: Int, sparseFeatureSize: Int, denseFeatureSize: Int) extends cc.factorie.app.classify.backend.MulticlassClassifier[(T1,T2,T3)] with Parameters with OptimizablePredictor[Tensor1,(T1,T2,T3)] {
-  val weightsForSparseFeatures = Weights(new DenseTensor2(sparseFeatureSize, labelSize))
-  val weightsForDenseFeatures1 = Weights(new DenseTensor2(denseFeatureSize, labelSize))
-  val weightsForDenseFeatures2 = Weights(new DenseTensor2(denseFeatureSize, labelSize))
-  val bilinearWeights = (0 until labelSize).map(i => Weights(new DenseTensor2(denseFeatureSize, denseFeatureSize)))
-
-  def predict(features: (T1,T2,T3)): Tensor1 = {
-    val result = weightsForSparseFeatures.value.leftMultiply(features._1)
-    result.+=(weightsForDenseFeatures1.value.leftMultiply(features._2))
-    result.+=(weightsForDenseFeatures2.value.leftMultiply(features._3))
-
-    (0 until labelSize).foreach(i => {
-      val quadForm = bilinearWeights(i).value.leftMultiply(features._2).dot(features._3)
-      result.+=(i,quadForm)
-    })
-    result
-  }
-  def accumulateObjectiveGradient(accumulator: WeightsMapAccumulator, features: (T1,T2,T3), gradient: Tensor1, weight: Double) = {
-    accumulator.accumulate(weightsForSparseFeatures, features._1 outer gradient)
-    accumulator.accumulate(weightsForDenseFeatures1, features._2  outer gradient)
-    accumulator.accumulate(weightsForDenseFeatures2, features._3  outer gradient)
-    (0 until labelSize).foreach(i => {
-      accumulator.accumulate(bilinearWeights(i), (features._2  outer features._3) * gradient(i))
-    })
-
-  }
-
-
-}
-
-
+//class SparseAndDenseBilinearMulticlassClassifier[T1 <: Tensor1, T2 <: Tensor1,T3 <: Tensor1](labelSize: Int, sparseFeatureSize: Int, denseFeatureSize: Int) extends cc.factorie.app.classify.backend.MulticlassClassifier[(T1,T2,T3)] with Parameters with OptimizablePredictor[Tensor1,(T1,T2,T3)] {
+//  val weightsForSparseFeatures = Weights(new DenseTensor2(sparseFeatureSize, labelSize))
+//  val weightsForDenseFeatures1 = Weights(new DenseTensor2(denseFeatureSize, labelSize))
+//  val weightsForDenseFeatures2 = Weights(new DenseTensor2(denseFeatureSize, labelSize))
+//  val bilinearWeights = (0 until labelSize).map(i => Weights(new DenseTensor2(denseFeatureSize, denseFeatureSize)))
+//
+//  def predict(features: (T1,T2,T3)): Tensor1 = {
+//    val result = weightsForSparseFeatures.value.leftMultiply(features._1)
+//    result.+=(weightsForDenseFeatures1.value.leftMultiply(features._2))
+//    result.+=(weightsForDenseFeatures2.value.leftMultiply(features._3))
+//
+//    (0 until labelSize).foreach(i => {
+//      val quadForm = bilinearWeights(i).value.leftMultiply(features._2).dot(features._3)
+//      result.+=(i,quadForm)
+//    })
+//    result
+//  }
+//  def accumulateObjectiveGradient(accumulator: WeightsMapAccumulator, features: (T1,T2,T3), gradient: Tensor1, weight: Double) = {
+//    accumulator.accumulate(weightsForSparseFeatures, features._1 outer gradient)
+//    accumulator.accumulate(weightsForDenseFeatures1, features._2  outer gradient)
+//    accumulator.accumulate(weightsForDenseFeatures2, features._3  outer gradient)
+//    (0 until labelSize).foreach(i => {
+//      accumulator.accumulate(bilinearWeights(i), (features._2  outer features._3) * gradient(i))
+//    })
+//
+//  }
+//}
 
 
 class ForwardPosTaggerWithEmbeddings(embedding: WordEmbedding) extends GeneralForwardPosTagger2{
