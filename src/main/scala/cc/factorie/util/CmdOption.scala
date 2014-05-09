@@ -293,7 +293,7 @@ class CmdOptions {
 
 /** Default CmdOption collection that should be included in most CmdOptions. */
 trait DefaultCmdOptions extends CmdOptions {
-  new CmdOption("help", "", "STRING", "Print this help message.") {
+  val help = new CmdOption("help", "", "STRING", "Print this help message.") {
     override def invoke = {
       DefaultCmdOptions.this.values.foreach(o => println(o.helpString))
       System.exit(0)
